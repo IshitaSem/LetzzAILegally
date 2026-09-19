@@ -479,8 +479,8 @@ class LegalAIService:
 
         # Determine if user is asking about a specific domain topic
         target_concept = None
-        for concept, syns in topic_synonyms.items():
-            if any(s in q_lower for s in syns):
+        for concept, terms in topic_synonyms.items():
+            if any(re.search(r'\b' + re.escape(term) + r'(s|es)?\b', q_lower) for term in terms):
                 target_concept = concept
                 break
 
@@ -530,8 +530,9 @@ class LegalAIService:
 
             elif target_concept in topic_synonyms:
                 for term in topic_synonyms[target_concept]:
-                    if term in u_lower:
+                    if re.search(r'\b' + re.escape(term) + r'(s|es)?\b', u_lower):
                         score += 30
+                        break
 
             # Boost numeric clauses if question asks for amount/fee/cost/deposit/percentage/number
             if any(term in q_lower for term in ["amount", "fee", "cost", "price", "deposit", "percentage", "number"]):
@@ -717,15 +718,7 @@ class LegalAIService:
             }
 
         # 7. Safe General Fallback (Only if we have a very strong relevance score, but since score isn't here, we rely on the guard)
-        # We will only use this if the top_clause is relatively long (not a short header)
-        if len(top_clause) > 20 and not cls._is_address_line(top_clause):
-            return {
-                "answer": f"{top_clause.rstrip('.')}.",
-                "reference_snippet": top_clause[:250],
-                "found_in_document": True
-            }
-
-        # No dangerous catch-all for short ambiguous headers. If it doesn't match above, return not found.
+        # We cannot safely assume that any random matched clause answers an arbitrary question.
         return {
             "answer": "I couldn't find information about that in the uploaded document.",
             "reference_snippet": None,

@@ -751,7 +751,7 @@ function DocAnalysis({ docId, setPage }: { docId: string | null; setPage: (p: Pa
   };
 
   const handleAskDoc = async () => {
-    if (!docQuestion.trim() || !docId) return;
+    if (!docQuestion.trim() || !docId || asking) return;
     setAsking(true);
     try {
       const res = await api.askDocument(docId, docQuestion);

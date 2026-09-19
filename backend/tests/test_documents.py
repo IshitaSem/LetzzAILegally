@@ -403,3 +403,67 @@ def test_security_deposit_amount_missing():
     data = ask_res.json()
     assert data["found_in_document"] is False
     assert "does not specify" in data["answer"].lower() or "not stated" in data["answer"].lower() or "couldn't find" in data["answer"].lower()
+
+def test_refrigerator_responsibility_absent():
+    file_content = b"SECTION 1: FIXED-TERM AGREEMENT (LEASE): Tenants agree to lease this dwelling for a fixed term of one year, beginning July 1, 2012 and ending June 30, 2013.\nSECTION 7: Tenants hereby agree to pay a security deposit of $685."
+    upload_res = client.post(
+        "/api/documents/upload",
+        files={"file": ("lease_ref.txt", io.BytesIO(file_content), "text/plain")}
+    )
+    assert upload_res.status_code == 201
+    doc_id = upload_res.json()["id"]
+
+    ask_res = client.post(
+        f"/api/documents/{doc_id}/ask",
+        json={"question": "Who is responsible for repairing the refrigerator?"}
+    )
+    assert ask_res.status_code == 200
+    data = ask_res.json()
+    assert data["found_in_document"] is False
+    assert not data["reference_snippet"] or "not found" in str(data["reference_snippet"]).lower() or data["reference_snippet"] == ""
+
+def test_favorite_color_absent():
+    file_content = b"SECTION 7: Tenants hereby agree to pay a security deposit of $685."
+    upload_res = client.post(
+        "/api/documents/upload",
+        files={"file": ("lease_color.txt", io.BytesIO(file_content), "text/plain")}
+    )
+    doc_id = upload_res.json()["id"]
+    ask_res = client.post(
+        f"/api/documents/{doc_id}/ask",
+        json={"question": "What is the tenant's favorite color?"}
+    )
+    data = ask_res.json()
+    assert data["found_in_document"] is False
+
+def test_security_deposit_existence():
+    file_content = b"SECTION 7: Tenants hereby agree to pay a security deposit of $685."
+    upload_res = client.post(
+        "/api/documents/upload",
+        files={"file": ("lease_dep.txt", io.BytesIO(file_content), "text/plain")}
+    )
+    doc_id = upload_res.json()["id"]
+    ask_res = client.post(
+        f"/api/documents/{doc_id}/ask",
+        json={"question": "Does the agreement specify a dollar amount for the security deposit?"}
+    )
+    data = ask_res.json()
+    assert data["found_in_document"] is True
+    assert "685" in data["answer"]
+
+def test_security_deposit_exact_amount_not_deduction_clause():
+    file_content = b"SECTION 1: FIXED-TERM AGREEMENT (LEASE): Tenants agree to lease this dwelling for a fixed term of one year, beginning July 1, 2012 and ending June 30, 2013.\nSECTION 7: Tenants hereby agree to pay a security deposit of $685.\nThey specifically authorize Landlord to deduct amounts of unpaid bills from their Security Deposits in the event they remain unpaid after termination of this agreement."
+    upload_res = client.post(
+        "/api/documents/upload",
+        files={"file": ("lease_dep_exact.txt", io.BytesIO(file_content), "text/plain")}
+    )
+    doc_id = upload_res.json()["id"]
+    ask_res = client.post(
+        f"/api/documents/{doc_id}/ask",
+        json={"question": "What is the security deposit amount mentioned in this agreement?"}
+    )
+    data = ask_res.json()
+    assert data["found_in_document"] is True
+    assert "685" in data["answer"]
+    assert "685" in data["reference_snippet"]
+    assert "deduct amounts" not in data["reference_snippet"]
