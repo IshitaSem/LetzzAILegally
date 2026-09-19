@@ -1,0 +1,10 @@
+{
+  "description": "Enables users to ask legal questions, upload documents, and receive clear AI-generated explanations with relevant sources for informed decision-making.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

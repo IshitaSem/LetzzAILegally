@@ -1,0 +1,3 @@
+"""
+LetzAiLegally Service Layer
+"""

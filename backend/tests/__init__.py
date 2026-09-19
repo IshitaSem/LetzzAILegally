@@ -1,0 +1,3 @@
+"""
+LetzAiLegally Test Suite
+"""
