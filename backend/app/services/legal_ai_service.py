@@ -533,6 +533,11 @@ class LegalAIService:
                     if term in u_lower:
                         score += 30
 
+            # Boost numeric clauses if question asks for amount/fee/cost/deposit/percentage/number
+            if any(term in q_lower for term in ["amount", "fee", "cost", "price", "deposit", "percentage", "number"]):
+                if re.search(r'\$|\d', u_lower):
+                    score += 40
+
             # Word overlaps for non-stop concept words
             score += sum(3 for w in q_words if w in u_lower)
 
@@ -540,7 +545,7 @@ class LegalAIService:
                 scored_units.append((score, u))
 
         scored_units.sort(key=lambda x: x[0], reverse=True)
-        top_units = [u for sc, u in scored_units if sc > 0][:3]
+        top_units = [u for sc, u in scored_units if sc > 0][:5]
         return "\n".join(top_units)
 
     @classmethod
@@ -610,6 +615,12 @@ class LegalAIService:
                     "reference_snippet": top_clause[:250],
                     "found_in_document": True
                 }
+            else:
+                return {
+                    "answer": "The agreement discusses the lease term, but does not specify the exact duration.",
+                    "reference_snippet": top_clause[:250],
+                    "found_in_document": False
+                }
 
         # 2. Rent Due Date & Payment Timing Question
         if any(term in q_lower for term in ["due", "when is rent", "when do i pay", "payment date", "when to pay", "pay rent", "day do i pay"]):
@@ -633,6 +644,12 @@ class LegalAIService:
                     "reference_snippet": top_clause[:250],
                     "found_in_document": True
                 }
+            else:
+                return {
+                    "answer": "The agreement discusses rent payment, but does not specify the exact due date.",
+                    "reference_snippet": top_clause[:250],
+                    "found_in_document": False
+                }
 
         # 3. Late Fee Question Handling
         if any(term in q_lower for term in ["late fee", "late penalty", "grace period", "penalty fee"]):
@@ -641,13 +658,17 @@ class LegalAIService:
                 clean_fee = fee_match.group(0).strip()
                 clean_fee = clean_fee if clean_fee.startswith("$") or clean_fee.endswith("%") else f"${clean_fee}"
                 formatted_ans = f"The late fee is {clean_fee}."
+                return {
+                    "answer": formatted_ans,
+                    "reference_snippet": top_clause[:250],
+                    "found_in_document": True
+                }
             else:
-                formatted_ans = "The agreement states that a late fee applies, but does not specify the exact fee amount."
-            return {
-                "answer": formatted_ans,
-                "reference_snippet": top_clause[:250],
-                "found_in_document": True
-            }
+                return {
+                    "answer": "The agreement states that a late fee applies, but does not specify the exact fee amount.",
+                    "reference_snippet": top_clause[:250],
+                    "found_in_document": False
+                }
 
         # 4. Rent Amount Question Handling
         if any(term in q_lower for term in ["monthly rent", "rent amount", "how much is rent", "rate per month", "what is the rent"]):
@@ -661,6 +682,12 @@ class LegalAIService:
                     "reference_snippet": top_clause[:250],
                     "found_in_document": True
                 }
+            else:
+                return {
+                    "answer": "The agreement discusses rent, but does not specify the exact monthly rent amount.",
+                    "reference_snippet": top_clause[:250],
+                    "found_in_document": False
+                }
 
         # 5. Security Deposit Question Handling
         if any(term in q_lower for term in ["deposit", "security deposit"]):
@@ -673,6 +700,12 @@ class LegalAIService:
                     "answer": formatted_ans,
                     "reference_snippet": top_clause[:250],
                     "found_in_document": True
+                }
+            else:
+                return {
+                    "answer": "The agreement discusses a security deposit, but does not specify the exact deposit amount.",
+                    "reference_snippet": top_clause[:250],
+                    "found_in_document": False
                 }
 
         # 6. Pet Policy Question Handling

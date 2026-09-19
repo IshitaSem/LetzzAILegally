@@ -386,4 +386,20 @@ def test_absent_parking_question():
     assert "couldn't find" in data["answer"].lower()
 
 
+def test_security_deposit_amount_missing():
+    file_content = b"RESIDENTIAL LEASE\nThey specifically authorize Landlord to deduct amounts of unpaid bills from their Security Deposits in the event they remain unpaid after termination of this agreement."
+    upload_res = client.post(
+        "/api/documents/upload",
+        files={"file": ("lease_deposit_no_amount.txt", io.BytesIO(file_content), "text/plain")}
+    )
+    assert upload_res.status_code == 201
+    doc_id = upload_res.json()["id"]
 
+    ask_res = client.post(
+        f"/api/documents/{doc_id}/ask",
+        json={"question": "What is the security deposit amount mentioned in this agreement?"}
+    )
+    assert ask_res.status_code == 200
+    data = ask_res.json()
+    assert data["found_in_document"] is False
+    assert "does not specify" in data["answer"].lower() or "not stated" in data["answer"].lower() or "couldn't find" in data["answer"].lower()

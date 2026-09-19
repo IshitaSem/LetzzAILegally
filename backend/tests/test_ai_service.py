@@ -16,7 +16,7 @@ def test_analyze_document_fallback():
     assert "important_dates" in res
 
 def test_ask_document_fallback():
-    sample_text = "The security deposit is two months rent."
+    sample_text = "The security deposit is $2,000."
     res = asyncio.run(LegalAIService.ask_document(sample_text, "How much is the security deposit?"))
     assert "answer" in res
     assert res["found_in_document"] is True
