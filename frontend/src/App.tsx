@@ -774,7 +774,7 @@ function DocAnalysis({ docId, setPage }: { docId: string | null; setPage: (p: Pa
           </p>
           <p style={{ fontSize: 11.5, marginTop: 2 }}>
             <span style={{ color: "var(--fg3)" }}>Legal Analysis · </span>
-            <span style={{ color: "var(--green)" }}>● Analysed with FastAPI &amp; Gemini</span>
+            <span style={{ color: "var(--green)" }}>✓ Evidence-grounded document analysis</span>
           </p>
         </div>
         <span className="badge bd-blue">Document Analysis</span>

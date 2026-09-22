@@ -1,6 +1,9 @@
-import json
-import logging
+import os
 import re
+import json
+import asyncio
+import logging
+from decimal import Decimal, InvalidOperation
 from typing import Dict, Any, Optional
 
 from app.config import settings
@@ -38,6 +41,12 @@ DOC_QUERY_KEYWORDS = [
 ]
 
 class LegalAIService:
+    _NOT_FOUND_RESPONSE = {
+        "answer": "I couldn't find information about that in the uploaded document.",
+        "reference_snippet": None,
+        "found_in_document": False,
+    }
+
     @staticmethod
     def _clean_json_string(text: str) -> str:
         """Strip markdown codeblock wrappers like ```json ... ```."""
@@ -291,7 +300,7 @@ class LegalAIService:
             return intent_response
 
         prompt = build_chat_prompt(user_message)
-        raw_response = cls._call_gemini(prompt)
+        raw_response = await asyncio.to_thread(cls._call_gemini, prompt)
 
         if raw_response:
             try:
@@ -326,7 +335,7 @@ class LegalAIService:
     async def analyze_document(cls, document_text: str, filename: str) -> Dict[str, Any]:
         """Analyze document text and return structured JSON."""
         prompt = build_document_analysis_prompt(document_text, filename)
-        raw_response = cls._call_gemini(prompt)
+        raw_response = await asyncio.to_thread(cls._call_gemini, prompt)
 
         if raw_response:
             try:
@@ -336,62 +345,17 @@ class LegalAIService:
             except Exception as err:
                 logger.error(f"Error parsing Gemini document analysis JSON: {err}")
 
+        # Never substitute sample clauses or legal claims when AI analysis is unavailable.
+        # The client can render these empty collections as an honest unavailable state.
         return {
-            "title": f"Legal Analysis: {filename}",
-            "overview": (
-                f"Standard agreement extracted from '{filename}'. The agreement defines key operational parameters, "
-                "financial obligations, term length, and operational rules between the executing parties."
-            ),
-            "risk_level": "Med",
-            "total_clauses_identified": 14,
-            "key_clauses": [
-                {
-                    "clause_number": "1",
-                    "title": "Term & Duration",
-                    "summary": "12-month fixed duration lease term requiring 30-day written renewal notice.",
-                    "original_snippet": "Term: 12 months starting on effective date.",
-                    "category": "summary"
-                },
-                {
-                    "clause_number": "2",
-                    "title": "Financial Rent & Grace Period",
-                    "summary": "Monthly payments due on the 1st of each month with a 5-day grace period before late fees.",
-                    "original_snippet": "Rent due on 1st. Late fee applies after 5th.",
-                    "category": "clauses"
-                },
-                {
-                    "clause_number": "3",
-                    "title": "Security Deposit Handling",
-                    "summary": "Security deposit held in non-interest-bearing account at Landlord's discretion.",
-                    "original_snippet": "Security deposit shall be held by Landlord without interest.",
-                    "category": "concerns"
-                }
-            ],
-            "obligations": [
-                "Tenant must provide minimum 30-day written notice prior to vacating premises.",
-                "Landlord must maintain plumbing, electrical, and heating infrastructure in working order.",
-                "Tenant is responsible for minor maintenance and prompt reporting of damages."
-            ],
-            "important_dates": [
-                {"label": "Effective Start Date", "date_or_period": "September 1, 2026", "icon": "📅"},
-                {"label": "Expiration Date", "date_or_period": "August 31, 2027", "icon": "📅"},
-                {"label": "Rent Due Date", "date_or_period": "1st of every month", "icon": "💰"},
-                {"label": "Late Fee Grace Period", "date_or_period": "5 Days", "icon": "⏱"}
-            ],
-            "potential_concerns": [
-                {
-                    "title": "Non-interest Security Deposit Clause",
-                    "description": "Local jurisdiction laws (e.g. CA Civ. Code § 1950.5 or local tenant ordinances) may mandate interest-bearing trust accounts for security deposits.",
-                    "severity": "High Priority",
-                    "legal_reference": "State Security Deposit Act"
-                },
-                {
-                    "title": "Unilateral Entry Clause",
-                    "description": "Ensure landlord entry requires 24-48 hours written notice except during emergency events.",
-                    "severity": "Review",
-                    "legal_reference": "Tenant Notice Standard"
-                }
-            ]
+            "title": f"Analysis unavailable: {filename}",
+            "overview": "Document analysis is not available right now. No document facts were generated.",
+            "risk_level": "Not available",
+            "total_clauses_identified": 0,
+            "key_clauses": [],
+            "obligations": [],
+            "important_dates": [],
+            "potential_concerns": [],
         }
 
     @staticmethod
@@ -454,7 +418,7 @@ class LegalAIService:
             "that", "these", "those", "document", "contract", "agreement", "lease",
             "mention", "mentions", "mentioned", "contain", "contains", "contained",
             "say", "says", "said", "state", "states", "stated", "tell", "tells",
-            "check", "verify", "show", "shows", "find", "there", "any", "allow", "allowed"
+            "check", "verify", "show", "shows", "find", "there", "any", "allow", "allowed", "tenant", "tenants", "landlord", "landlords"
         }
 
         # Semantic concept mapping
@@ -485,7 +449,7 @@ class LegalAIService:
                 break
 
         # Concept Guard: if query asks for an unmentioned topic, return empty
-        if target_concept in ["pets", "parking", "smoking", "sublet", "swimming", "termination", "renewal", "insurance", "maintenance", "guests"]:
+        if target_concept in ["pets", "parking", "smoking", "sublet", "swimming", "termination", "renewal", "insurance", "maintenance", "guests", "late", "deposit", "due"]:
             topic_terms = topic_synonyms[target_concept]
             doc_has_topic = any(term in document_text.lower() for term in topic_terms)
             if not doc_has_topic:
@@ -549,25 +513,74 @@ class LegalAIService:
         top_units = [u for sc, u in scored_units if sc > 0][:5]
         return "\n".join(top_units)
 
+    @staticmethod
+    def _normalised_numbers(text: str) -> set[str]:
+        """Return comparable number tokens without inferring their legal meaning."""
+        values: set[str] = set()
+        for token in re.findall(r'\$?\s*\d{1,3}(?:,\d{3})*(?:\.\d+)?|\b\d+(?:\.\d+)?', text):
+            cleaned = token.replace("$", "").replace(",", "").strip()
+            try:
+                values.add(format(Decimal(cleaned).normalize(), "f"))
+            except InvalidOperation:
+                continue
+        return values
+
+    @staticmethod
+    def _month_names(text: str) -> set[str]:
+        return set(re.findall(
+            r'\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\b',
+            text.lower(),
+        ))
+
+    @classmethod
+    def _gemini_answer_is_grounded(cls, answer: str, reference_snippet: str) -> bool:
+        """Reject Gemini answers that introduce numeric or calendar facts absent from its quote."""
+        if not cls._normalised_numbers(answer).issubset(cls._normalised_numbers(reference_snippet)):
+            return False
+        return cls._month_names(answer).issubset(cls._month_names(reference_snippet))
+
+    @staticmethod
+    def _question_requires_specific_value(question: str) -> bool:
+        """Identify questions that cannot be answered safely without an explicit value or date."""
+        q = question.lower()
+        return any(phrase in q for phrase in [
+            "how much", "amount", "what is the monthly rent", "what is the rent",
+            "rent amount", "what is the late fee", "late fee amount", "security deposit amount",
+            "when is", "when do", "when does", "due date", "how long", "duration",
+            "expires", "expire", "expiration",
+        ])
+
+    @classmethod
+    def _evidence_only_fallback(cls, relevant_context: str, question: str) -> Dict[str, Any]:
+        """Return only a retrieved clause, or an honest not-found result."""
+        top_clause = next((line.strip() for line in relevant_context.splitlines() if line.strip()), "")
+        if not top_clause:
+            return dict(cls._NOT_FOUND_RESPONSE)
+
+        if cls._question_requires_specific_value(question):
+            if not cls._normalised_numbers(top_clause) and not cls._month_names(top_clause):
+                return dict(cls._NOT_FOUND_RESPONSE)
+
+        return {
+            "answer": top_clause,
+            "reference_snippet": top_clause,
+            "found_in_document": True,
+        }
+
     @classmethod
     async def ask_document(cls, document_text: str, question: str) -> Dict[str, Any]:
         """Grounded QA on document text using semantic retrieval + Gemini synthesis with natural fallback."""
         relevant_context = cls._retrieve_relevant_context(document_text, question)
 
-        logger.info(f"[Document Q&A] Question: '{question}'")
-        logger.info(f"[Document Q&A] Retrieved Context:\n{relevant_context if relevant_context else '[NO RELEVANT EVIDENCE FOUND]'}")
+        logger.info("Document Q&A retrieval completed | context_characters=%d", len(relevant_context))
 
         # NO-EVIDENCE RULE: If retrieval found no evidence for the question topic, return absent response immediately
         if not relevant_context or not relevant_context.strip():
-            logger.info("[Document Q&A] Triggered No-Evidence Rule -> Returning absent information response.")
-            return {
-                "answer": "I couldn't find information about that in the uploaded document.",
-                "reference_snippet": None,
-                "found_in_document": False
-            }
+            logger.info("Document Q&A returned not found because retrieval produced no evidence.")
+            return dict(cls._NOT_FOUND_RESPONSE)
 
         prompt = build_document_ask_prompt(document_text, question, relevant_context=relevant_context)
-        raw_response = cls._call_gemini(prompt)
+        raw_response = await asyncio.to_thread(cls._call_gemini, prompt)
 
         if raw_response:
             try:
@@ -578,158 +591,37 @@ class LegalAIService:
                 
                 # Check if Gemini stated it couldn't find info
                 if "couldn't find" in ans.lower() or "not found" in ans.lower() or data.get("found_in_document") is False:
-                    return {
-                        "answer": "I couldn't find information about that in the uploaded document.",
-                        "reference_snippet": None,
-                        "found_in_document": False
-                    }
+                    return dict(cls._NOT_FOUND_RESPONSE)
                     
-                logger.info(f"[Document Q&A] Gemini Generated Answer: '{ans}' | Snippet: '{data.get('reference_snippet')}'")
+                snippet = data.get("reference_snippet")
+                # A generated answer is only usable when its claimed evidence is part of
+                # the retrieved document context. This prevents unsupported Q&A output.
+                if not snippet or snippet not in relevant_context:
+                    logger.warning("Discarded document Q&A response with unsupported evidence.")
+                    raise ValueError("Generated response did not include a retrieved supporting clause")
+
+                if not cls._gemini_answer_is_grounded(ans, snippet):
+                    logger.warning("Discarded document Q&A response with unsupported numeric or date facts.")
+                    raise ValueError("Generated response failed grounding validation")
+
+                logger.info("Gemini document Q&A response validated successfully.")
                 return {
                     "answer": ans,
-                    "reference_snippet": data.get("reference_snippet"),
+                    "reference_snippet": snippet,
                     "found_in_document": True
                 }
             except Exception as err:
                 logger.error(f"Error parsing Gemini document ask JSON: {err}")
 
         # Deterministic Grounded Synthesis Fallback (used when Gemini API key is mock or offline)
-        logger.info("[Document Q&A] Executing Grounded Synthesis Fallback with retrieved evidence...")
-        q_lower = question.lower()
-        context_lines = [line.strip() for line in relevant_context.splitlines() if line.strip()]
-        top_clause = context_lines[0] if context_lines else ""
-
-        if not top_clause:
-            return {
-                "answer": "I couldn't find information about that in the uploaded document.",
-                "reference_snippet": None,
-                "found_in_document": False
-            }
-
-        # 1. Lease Duration / Term Question Handling
-        if any(term in q_lower for term in ["how long", "duration", "lease term", "term length", "expiration", "many months"]):
-            match_duration = re.search(r'(\d+\s*months?|\d+\s*years?)', top_clause, re.IGNORECASE)
-            if match_duration:
-                ans_text = f"The lease term is {match_duration.group(0)}."
-                return {
-                    "answer": ans_text,
-                    "reference_snippet": top_clause[:250],
-                    "found_in_document": True
-                }
-            else:
-                return {
-                    "answer": "The agreement discusses the lease term, but does not specify the exact duration.",
-                    "reference_snippet": top_clause[:250],
-                    "found_in_document": False
-                }
-
-        # 2. Rent Due Date & Payment Timing Question
-        if any(term in q_lower for term in ["due", "when is rent", "when do i pay", "payment date", "when to pay", "pay rent", "day do i pay"]):
-            if "1st" in top_clause.lower() and "grace period" in top_clause.lower():
-                ans_text = "Rent is due on the 1st of each month. A grace period applies."
-                return {
-                    "answer": ans_text,
-                    "reference_snippet": top_clause[:250],
-                    "found_in_document": True
-                }
-            elif "1st" in top_clause.lower():
-                ans_text = "Rent is due on the 1st of the month. A late fee applies after the 5th."
-                return {
-                    "answer": ans_text,
-                    "reference_snippet": top_clause[:250],
-                    "found_in_document": True
-                }
-            elif "due on" in top_clause.lower():
-                return {
-                    "answer": f"{top_clause.rstrip('.')}.",
-                    "reference_snippet": top_clause[:250],
-                    "found_in_document": True
-                }
-            else:
-                return {
-                    "answer": "The agreement discusses rent payment, but does not specify the exact due date.",
-                    "reference_snippet": top_clause[:250],
-                    "found_in_document": False
-                }
-
-        # 3. Late Fee Question Handling
-        if any(term in q_lower for term in ["late fee", "late penalty", "grace period", "penalty fee"]):
-            fee_match = re.search(r'(\$\s?[\d,]+(?:\.\d{2})?|\b\d+%\b)', top_clause, re.IGNORECASE)
-            if fee_match:
-                clean_fee = fee_match.group(0).strip()
-                clean_fee = clean_fee if clean_fee.startswith("$") or clean_fee.endswith("%") else f"${clean_fee}"
-                formatted_ans = f"The late fee is {clean_fee}."
-                return {
-                    "answer": formatted_ans,
-                    "reference_snippet": top_clause[:250],
-                    "found_in_document": True
-                }
-            else:
-                return {
-                    "answer": "The agreement states that a late fee applies, but does not specify the exact fee amount.",
-                    "reference_snippet": top_clause[:250],
-                    "found_in_document": False
-                }
-
-        # 4. Rent Amount Question Handling
-        if any(term in q_lower for term in ["monthly rent", "rent amount", "how much is rent", "rate per month", "what is the rent"]):
-            amount_match = re.search(r'(\$\s?[\d,]+(?:\.\d{2})?(?:\s?/\s?month)?|\b[\d,]+\s?dollars?\b|\b[\d,]+\s?/month\b)', top_clause, re.IGNORECASE)
-            if amount_match:
-                clean_amount = amount_match.group(0).strip().replace(" per month", "").replace("/month", "")
-                clean_amount = clean_amount if clean_amount.startswith("$") else f"${clean_amount}"
-                formatted_ans = f"The monthly rent is {clean_amount} per month."
-                return {
-                    "answer": formatted_ans,
-                    "reference_snippet": top_clause[:250],
-                    "found_in_document": True
-                }
-            else:
-                return {
-                    "answer": "The agreement discusses rent, but does not specify the exact monthly rent amount.",
-                    "reference_snippet": top_clause[:250],
-                    "found_in_document": False
-                }
-
-        # 5. Security Deposit Question Handling
-        if any(term in q_lower for term in ["deposit", "security deposit"]):
-            amount_match = re.search(r'(\$\s?[\d,]+(?:\.\d{2})?|\b[\d,]+\s?dollars?\b)', top_clause, re.IGNORECASE)
-            if amount_match:
-                clean_deposit = amount_match.group(0).strip()
-                clean_deposit = clean_deposit if clean_deposit.startswith("$") else f"${clean_deposit}"
-                formatted_ans = f"The security deposit amount is {clean_deposit}."
-                return {
-                    "answer": formatted_ans,
-                    "reference_snippet": top_clause[:250],
-                    "found_in_document": True
-                }
-            else:
-                return {
-                    "answer": "The agreement discusses a security deposit, but does not specify the exact deposit amount.",
-                    "reference_snippet": top_clause[:250],
-                    "found_in_document": False
-                }
-
-        # 6. Pet Policy Question Handling
-        if any(term in q_lower for term in ["pet", "pets", "dog", "cat", "animal"]):
-            return {
-                "answer": f"{top_clause.rstrip('.')}.",
-                "reference_snippet": top_clause[:250],
-                "found_in_document": True
-            }
-
-        # 7. Safe General Fallback (Only if we have a very strong relevance score, but since score isn't here, we rely on the guard)
-        # We cannot safely assume that any random matched clause answers an arbitrary question.
-        return {
-            "answer": "I couldn't find information about that in the uploaded document.",
-            "reference_snippet": None,
-            "found_in_document": False
-        }
+        logger.info("Executing Grounded Synthesis Fallback with retrieved evidence...")
+        return cls._evidence_only_fallback(relevant_context, question)
 
     @classmethod
     async def checklist_document(cls, document_text: str, filename: str) -> Dict[str, Any]:
         """Generate legal checklist from document."""
         prompt = build_document_checklist_prompt(document_text, filename)
-        raw_response = cls._call_gemini(prompt)
+        raw_response = await asyncio.to_thread(cls._call_gemini, prompt)
 
         if raw_response:
             try:
@@ -739,31 +631,7 @@ class LegalAIService:
                 logger.error(f"Error parsing Gemini document checklist JSON: {err}")
 
         return {
-            "important_items_to_review": [
-                {
-                    "category": "Financial",
-                    "item": "Verify total deposit amount, monthly rate, and allowable late fee caps.",
-                    "priority": "High"
-                },
-                {
-                    "category": "Term & Renewal",
-                    "item": "Confirm exact notice window required for termination or renewal (30 vs 60 days).",
-                    "priority": "Normal"
-                },
-                {
-                    "category": "Maintenance & Entry",
-                    "item": "Check landlord entry notice terms and repair request procedures.",
-                    "priority": "Normal"
-                }
-            ],
-            "questions_for_legal_professional": [
-                "Does the security deposit interest clause comply with municipal tenant protection laws?",
-                "Are there any illegal penalty fees or automatic forfeiture provisions in this agreement?",
-                "Is the indemnification clause mutual or one-sided?"
-            ],
-            "action_items_and_deadlines": [
-                "Calendar rent payment due dates and 5-day grace period end date.",
-                "Document pre-existing property conditions with photos prior to move-in.",
-                "Set reminder 60 days prior to contract end date for renewal notice."
-            ]
+            "important_items_to_review": [],
+            "questions_for_legal_professional": [],
+            "action_items_and_deadlines": [],
         }

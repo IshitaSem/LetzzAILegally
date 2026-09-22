@@ -1,6 +1,7 @@
 import os
 import uuid
 import datetime
+import asyncio
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 import fitz  # PyMuPDF
@@ -14,7 +15,7 @@ _DOCUMENTS_STORE: Dict[str, Dict[str, Any]] = {}
 class DocumentService:
     @staticmethod
     def validate_file(file: UploadFile, file_bytes: bytes) -> None:
-        """Validate file size and extension."""
+        """Validate file size, supported extension, and file signature where applicable."""
         # 1. File Size Validation
         max_bytes = settings.MAX_FILE_SIZE_MB * 1024 * 1024
         if len(file_bytes) > max_bytes:
@@ -35,6 +36,19 @@ class DocumentService:
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
                 detail=f"Unsupported file format '{ext}'. Allowed formats: {', '.join(settings.ALLOWED_EXTENSIONS)}"
+            )
+
+        # Extensions are user-controlled. Check binary formats before attempting
+        # parsing so renamed executables or malformed documents are rejected.
+        if ext == ".pdf" and not file_bytes.startswith(b"%PDF-"):
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="The uploaded file does not contain a valid PDF signature."
+            )
+        if ext == ".docx" and not file_bytes.startswith(b"PK\x03\x04"):
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="The uploaded file does not contain a valid DOCX signature."
             )
 
     @staticmethod
@@ -84,6 +98,11 @@ class DocumentService:
 
         return extracted_text.strip()
 
+    @staticmethod
+    def _write_file(file_path: Path, file_bytes: bytes) -> None:
+        with open(file_path, "wb") as f:
+            f.write(file_bytes)
+
     @classmethod
     async def process_and_save_upload(cls, file: UploadFile) -> Dict[str, Any]:
         """Validate, extract, save, and record document."""
@@ -97,14 +116,13 @@ class DocumentService:
         doc_id = str(uuid.uuid4())
         ext = Path(filename).suffix.lower()
 
-        # Extract text
-        extracted_text = cls.extract_text(file_bytes, filename)
+        # Extract text asynchronously to prevent blocking event loop
+        extracted_text = await asyncio.to_thread(cls.extract_text, file_bytes, filename)
 
-        # Save binary file safely
+        # Save binary file safely and asynchronously
         safe_filename = f"{doc_id}{ext}"
         file_path = Path(settings.UPLOAD_DIR) / safe_filename
-        with open(file_path, "wb") as f:
-            f.write(file_bytes)
+        await asyncio.to_thread(cls._write_file, file_path, file_bytes)
 
         # Record metadata
         doc_record = {

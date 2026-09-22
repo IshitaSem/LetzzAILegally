@@ -18,8 +18,9 @@ app = FastAPI(
 origins = settings.parsed_allowed_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins if origins else ["*"],
-    allow_credentials=True,
+    # Do not fall back to a credentialed wildcard origin when configuration is absent.
+    allow_origins=origins,
+    allow_credentials=bool(origins and origins != ["*"]),
     allow_methods=["*"],
     allow_headers=["*"],
 )

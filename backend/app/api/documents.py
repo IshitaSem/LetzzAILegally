@@ -85,8 +85,8 @@ async def analyze_document(document_id: str):
         document_id=doc["id"],
         filename=doc["filename"],
         title=res.get("title", f"Analysis: {doc['filename']}"),
-        overview=res.get("overview", "Document analysis complete."),
-        risk_level=res.get("risk_level", "Med"),
+        overview=res.get("overview", "Document analysis is not available."),
+        risk_level=res.get("risk_level", "Not available"),
         total_clauses_identified=res.get("total_clauses_identified", len(res.get("key_clauses", []))),
         key_clauses=res.get("key_clauses", []),
         obligations=res.get("obligations", []),
@@ -111,18 +111,18 @@ async def ask_document_question(document_id: str, request: DocumentAskRequest):
     doc = DocumentService.get_document(document_id)
     extracted_text = doc.get("extracted_text", "")
 
-    logger.info(f"Received Q&A Request for Doc '{document_id}' ({doc.get('filename')}): '{request.question}'")
+    logger.info(f"Received Q&A Request for Doc '{document_id}' ({doc.get('filename')})")
 
     res = await LegalAIService.ask_document(extracted_text, request.question)
 
-    logger.info(f"Q&A Response Answer: '{res.get('answer')}' | Snippet: '{res.get('reference_snippet')}' | Found: {res.get('found_in_document')}")
+    logger.info(f"Q&A Response for Doc '{document_id}' | Found: {res.get('found_in_document')} | AnsLen: {len(res.get('answer', ''))} | SnipLen: {len(res.get('reference_snippet') or '')}")
 
     return DocumentAskResponse(
         document_id=doc["id"],
         question=request.question,
         answer=res.get("answer", "No answer could be determined from document."),
         reference_snippet=res.get("reference_snippet"),
-        found_in_document=res.get("found_in_document", True),
+        found_in_document=res.get("found_in_document", False),
         disclaimer=LEGAL_DISCLAIMER
     )
 
