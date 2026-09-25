@@ -19,102 +19,6 @@ interface ChatMessageItem {
   error?: string;
 }
 
-/* ─── sample demo document data (1-click evaluation) ────────────────────────── */
-export const SAMPLE_LEASE_DOC_ID = "demo-sample-residential-lease";
-
-export const SAMPLE_LEASE_ANALYSIS: DocumentAnalysisResponse = {
-  document_id: SAMPLE_LEASE_DOC_ID,
-  filename: "Sample_Residential_Lease_Agreement.pdf",
-  title: "RESIDENTIAL LEASE AGREEMENT (DEMO SAMPLE)",
-  overview: "Standard 12-month residential tenancy agreement establishing tenant occupancy at $685.00 per month, a refundable security deposit of $685.00, mutual habitability/maintenance duties, and 30-day termination notice requirements.",
-  risk_level: "Low",
-  total_clauses_identified: 5,
-  key_clauses: [
-    {
-      clause_number: "1",
-      title: "Lease Term & Duration",
-      summary: "12-month fixed-term tenancy commencing October 1, 2026 and concluding September 30, 2027.",
-      original_snippet: "The term of this Lease shall commence on October 1, 2026, and shall terminate on September 30, 2027.",
-      category: "clauses"
-    },
-    {
-      clause_number: "2",
-      title: "Monthly Rent & Due Date",
-      summary: "Monthly base rent is $685.00, payable on the 1st calendar day of each month. A $50 late fee is assessed after a 5-day grace period.",
-      original_snippet: "Tenant shall pay to Landlord a monthly base rent of $685.00, payable in advance on the 1st day of each calendar month. A late charge of $50 shall be assessed if rent is not received by the 5th.",
-      category: "clauses"
-    },
-    {
-      clause_number: "3",
-      title: "Security Deposit",
-      summary: "Security deposit of $685.00 held in escrow to guarantee performance and property preservation, refundable within 21 days after vacating.",
-      original_snippet: "Upon execution of this Lease, Tenant shall deposit with Landlord the sum of $685.00 as security for faithful performance. The deposit shall be returned within 21 days after tenancy concludes.",
-      category: "clauses"
-    },
-    {
-      clause_number: "4",
-      title: "Maintenance & Repairs",
-      summary: "Landlord warrants structural integrity, plumbing, and heating habitability; Tenant is responsible for basic cleanliness and reporting defects.",
-      original_snippet: "Landlord shall maintain the structural components, plumbing, heating, and electrical systems in habitable condition in compliance with local housing codes.",
-      category: "clauses"
-    },
-    {
-      clause_number: "5",
-      title: "Renewal & Termination Notice",
-      summary: "Either party must deliver at least 30 days written notice prior to expiration to terminate or renegotiate renewal.",
-      original_snippet: "Either party may terminate or modify this Lease by delivering written notice at least thirty (30) days prior to the expiration date.",
-      category: "clauses"
-    }
-  ],
-  obligations: [
-    "Pay monthly rent of $685.00 on or before the 1st of each calendar month.",
-    "Deposit $685.00 security deposit upon lease signing.",
-    "Maintain the rental unit in clean, sanitary condition and notify landlord promptly of plumbing or heating defects.",
-    "Provide at least 30 days written notice prior to moving out or renewing."
-  ],
-  important_dates: [
-    { label: "Lease Commencement", date_or_period: "October 1, 2026", icon: "📅" },
-    { label: "Rent Due Date", date_or_period: "1st of each month", icon: "💵" },
-    { label: "Late Fee Grace Period", date_or_period: "Through 5th of month", icon: "⚠️" },
-    { label: "Lease Expiration", date_or_period: "September 30, 2027", icon: "📅" },
-    { label: "Termination Notice Window", date_or_period: "30 days prior", icon: "✉️" }
-  ],
-  potential_concerns: [
-    {
-      title: "Late Fee Assessment ($50)",
-      description: "Ensure the $50 late charge after the 5th conforms to statutory maximum caps for residential tenancies in your municipality.",
-      severity: "Review",
-      legal_reference: "Local Residential Tenancy Code"
-    },
-    {
-      title: "Guest Stay Restrictions",
-      description: "Standard boilerplate may restrict unlisted guests beyond 14 consecutive days without prior written landlord approval.",
-      severity: "Review",
-      legal_reference: "Quiet Enjoyment and Occupancy Standards"
-    }
-  ],
-  disclaimer: "LetzAiLegally provides AI-generated legal information for informational purposes only and does not constitute formal legal advice. Please consult a qualified legal professional for specific guidance."
-};
-
-export const SAMPLE_LEASE_CHECKLIST: DocumentChecklistResponse = {
-  document_id: SAMPLE_LEASE_DOC_ID,
-  filename: "Sample_Residential_Lease_Agreement.pdf",
-  important_items_to_review: [
-    { category: "Financial", item: "Verify that security deposit ($685) matches the exact first month's base rent amount.", priority: "High" },
-    { category: "Verification", item: "Complete move-in condition walkthrough checklist and photograph premises within 48 hours.", priority: "High" },
-    { category: "Deadlines", item: "Set reminder for August 31, 2027 (30-day notice cutoff before expiration).", priority: "Normal" }
-  ],
-  questions_for_legal_professional: [
-    "Does my local jurisdiction require the landlord to pay interest on the $685 escrow security deposit?",
-    "Are there municipal rent stabilization or habitability ordinances that supersede terms in this agreement?"
-  ],
-  action_items_and_deadlines: [
-    "Sign lease agreement and retain a countersigned duplicate copy.",
-    "Submit $685 security deposit via certified traceable payment."
-  ],
-  disclaimer: "LetzAiLegally provides AI-generated legal information for informational purposes only and does not constitute formal legal advice."
-};
-
 /* ─── icon primitives ────────────────────────────────────────────────────────── */
 const SVG = ({ children, ...p }: React.SVGProps<SVGSVGElement>) => (
   <svg viewBox="0 0 20 20" fill="currentColor" style={{ width: "100%", height: "100%" }} aria-hidden="true" {...p}>{children}</svg>
@@ -395,7 +299,7 @@ const QUICK = [
   { em: "🔍", label: "Find Relevant Sources",   sub: "Explore supporting legal references and case law", tag: null,         page: "chat" as Page },
 ];
 
-function HomePage({ setPage, onUpload, onSelectDoc }: { setPage: (p: Page) => void; onUpload: () => void; onSelectDoc: (id: string) => void }) {
+function HomePage({ setPage, onUpload }: { setPage: (p: Page) => void; onUpload: () => void }) {
   return (
     <div className="scroll" style={{ flex: 1, overflowY: "auto", position: "relative" }}>
       <div className="gblob" style={{ width: 600, height: 600, top: -150, right: -100, background: "radial-gradient(circle,rgba(61,127,255,.14) 0%,transparent 65%)", animationDelay: "0s" }} />
@@ -424,40 +328,6 @@ function HomePage({ setPage, onUpload, onSelectDoc }: { setPage: (p: Page) => vo
           <p style={{ fontSize: 14.5, color: "var(--fg2)", lineHeight: 1.65, maxWidth: 520 }}>
             Understand agreements without confusing legalese. Ask legal questions, analyze contracts, extract critical dates, and receive evidence-grounded answers.
           </p>
-        </div>
-
-        {/* 1-Click Evaluator Demo Banner */}
-        <div className="anim-up" style={{
-          marginBottom: 32,
-          padding: "16px 20px",
-          borderRadius: 14,
-          background: "rgba(61,127,255,.08)",
-          border: "1px solid rgba(61,127,255,.24)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 16,
-          boxShadow: "0 4px 20px rgba(0,0,0,.25)"
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ fontSize: 26 }} aria-hidden="true">📑</span>
-            <div>
-              <p className="sora" style={{ fontSize: 13.5, fontWeight: 600, color: "var(--fg)" }}>
-                Hackathon Demo: Try Sample Lease Agreement
-              </p>
-              <p style={{ fontSize: 12, color: "var(--fg3)", marginTop: 2 }}>
-                Instantly inspect AI clause analysis, risk detection, and grounded Q&amp;A in 1 click.
-              </p>
-            </div>
-          </div>
-          <button
-            className="btn-blue"
-            onClick={() => { onSelectDoc(SAMPLE_LEASE_DOC_ID); setPage("doc-analysis"); }}
-            aria-label="Try with Sample Lease Agreement"
-            style={{ fontSize: 12, padding: "8px 16px", whiteSpace: "nowrap" }}
-          >
-            Try Sample Lease →
-          </button>
         </div>
 
         <div className="anim-up" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 40, animationDelay: ".1s" }}>
@@ -835,20 +705,6 @@ function UploadModal({ onClose, onDone }: { onClose: () => void; onDone: (docId:
                   ))}
                 </div>
               </div>
-
-              {/* Instant evaluator sample trigger inside modal */}
-              <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--border2)", textAlign: "center" }}>
-                <p style={{ fontSize: 12, color: "var(--fg3)", marginBottom: 8 }}>Evaluating the app without a PDF on hand?</p>
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  onClick={() => { onClose(); onDone(SAMPLE_LEASE_DOC_ID); }}
-                  aria-label="Load pre-structured Sample Lease Agreement for testing"
-                  style={{ fontSize: 12, cursor: "pointer", width: "100%", justifyContent: "center" }}
-                >
-                  📄 Test Instantly with Sample Lease Agreement
-                </button>
-              </div>
             </>
           )}
 
@@ -917,14 +773,6 @@ function DocAnalysis({ docId, setPage }: { docId: string | null; setPage: (p: Pa
       setLoading(true);
       setError(null);
 
-      // Handle 1-click demo sample agreement immediately
-      if (docId === SAMPLE_LEASE_DOC_ID) {
-        setAnalysis(SAMPLE_LEASE_ANALYSIS);
-        setChecklist(SAMPLE_LEASE_CHECKLIST);
-        setLoading(false);
-        return;
-      }
-
       try {
         if (docId) {
           const res = await api.analyzeDocument(docId);
@@ -935,15 +783,11 @@ function DocAnalysis({ docId, setPage }: { docId: string | null; setPage: (p: Pa
             const res = await api.analyzeDocument(docs[0].id);
             setAnalysis(res);
           } else {
-            // Default to sample lease if no document exists yet
-            setAnalysis(SAMPLE_LEASE_ANALYSIS);
-            setChecklist(SAMPLE_LEASE_CHECKLIST);
+            setError("No document selected. Please upload a document to view its analysis.");
           }
         }
       } catch (err: any) {
-        // Fallback to sample analysis so UI remains responsive and evaluatable
-        setAnalysis(SAMPLE_LEASE_ANALYSIS);
-        setChecklist(SAMPLE_LEASE_CHECKLIST);
+        setError(err?.message || "Failed to load document analysis.");
       } finally {
         setLoading(false);
       }
@@ -953,17 +797,13 @@ function DocAnalysis({ docId, setPage }: { docId: string | null; setPage: (p: Pa
 
   const handleFetchChecklist = async () => {
     if (checklist) return;
-    if (docId === SAMPLE_LEASE_DOC_ID) {
-      setChecklist(SAMPLE_LEASE_CHECKLIST);
-      return;
-    }
+    const targetId = docId || analysis?.document_id;
+    if (!targetId) return;
     try {
-      if (docId) {
-        const res = await api.getChecklist(docId);
-        setChecklist(res);
-      }
+      const res = await api.getChecklist(targetId);
+      setChecklist(res);
     } catch (err) {
-      setChecklist(SAMPLE_LEASE_CHECKLIST);
+      // Checklist error handled gracefully
     }
   };
 
@@ -977,59 +817,14 @@ function DocAnalysis({ docId, setPage }: { docId: string | null; setPage: (p: Pa
   const handleAskDoc = async () => {
     const q = docQuestion.trim();
     if (!q || asking) return;
+    const targetId = docId || analysis?.document_id;
+    if (!targetId) return;
     setAsking(true);
 
-    // If evaluating with demo sample document, provide instantaneous grounded responses
-    if (docId === SAMPLE_LEASE_DOC_ID) {
-      const qLower = q.toLowerCase();
-      let answer = "";
-      let snippet: string | undefined = undefined;
-      let found = true;
-
-      if (qLower.includes("rent") && (qLower.includes("much") || qLower.includes("amount") || qLower.includes("how"))) {
-        answer = "The monthly base rent is $685.00 per month, payable in advance on the 1st day of each calendar month.";
-        snippet = "Tenant shall pay to Landlord a monthly base rent of $685.00, payable in advance on the 1st day of each calendar month.";
-      } else if (qLower.includes("deposit") || qLower.includes("security")) {
-        answer = "The security deposit is $685.00, held in escrow and refundable within 21 days after tenancy concludes.";
-        snippet = "Upon execution of this Lease, Tenant shall deposit with Landlord the sum of $685.00 as security for faithful performance. The deposit shall be returned within 21 days after tenancy concludes.";
-      } else if (qLower.includes("due") || qLower.includes("when is rent") || qLower.includes("pay rent")) {
-        answer = "Rent is due on the 1st day of each calendar month. A late charge of $50 applies if payment is not received by the 5th.";
-        snippet = "payable in advance on the 1st day of each calendar month. A late charge of $50 shall be assessed if rent is not received by the 5th.";
-      } else if (qLower.includes("late") || qLower.includes("penalty") || qLower.includes("grace")) {
-        answer = "A late fee of $50 is assessed if rent is not received by the 5th day of the month.";
-        snippet = "A late charge of $50 shall be assessed if rent is not received by the 5th.";
-      } else if (qLower.includes("duration") || qLower.includes("how long") || qLower.includes("term")) {
-        answer = "The lease duration is 12 months, commencing October 1, 2026 and terminating September 30, 2027.";
-        snippet = "The term of this Lease shall commence on October 1, 2026, and shall terminate on September 30, 2027.";
-      } else if (qLower.includes("pet") || qLower.includes("dog") || qLower.includes("cat") || qLower.includes("pool") || qLower.includes("swimming")) {
-        answer = "I couldn't find information about that in the uploaded document.";
-        snippet = undefined;
-        found = false;
-      } else {
-        answer = "Under this residential lease agreement, standard tenancy terms apply for payments, maintenance, and 30-day termination notices.";
-        snippet = "Either party may terminate or modify this Lease by delivering written notice at least thirty (30) days prior to the expiration date.";
-      }
-
-      const demoResponse: DocumentAskResponse = {
-        document_id: SAMPLE_LEASE_DOC_ID,
-        question: q,
-        answer,
-        reference_snippet: snippet,
-        found_in_document: found,
-        disclaimer: "LetzAiLegally provides AI-generated legal information for informational purposes only and does not constitute formal legal advice."
-      };
-      setDocAnswers(prev => [demoResponse, ...prev]);
-      setDocQuestion("");
-      setAsking(false);
-      return;
-    }
-
     try {
-      if (docId) {
-        const res = await api.askDocument(docId, q);
-        setDocAnswers(prev => [res, ...prev]);
-        setDocQuestion("");
-      }
+      const res = await api.askDocument(targetId, q);
+      setDocAnswers(prev => [res, ...prev]);
+      setDocQuestion("");
     } catch (err: any) {
       // Document QA error handled in state
     } finally {
@@ -1042,14 +837,9 @@ function DocAnalysis({ docId, setPage }: { docId: string | null; setPage: (p: Pa
       <div style={{ padding: "14px 24px", borderBottom: "1px solid var(--border2)", display: "flex", alignItems: "center", gap: 14, flexShrink: 0 }}>
         <button className="btn-ghost" onClick={() => setPage("documents")} style={{ fontSize: 12, cursor: "pointer" }} aria-label="Go back to documents list">← Back</button>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <p className="sora" style={{ fontSize: 14, fontWeight: 600, color: "var(--fg)" }}>
-              {analysis?.filename || "Sample_Residential_Lease_Agreement.pdf"}
-            </p>
-            {docId === SAMPLE_LEASE_DOC_ID && (
-              <span className="badge bd-blue" style={{ fontSize: 10 }}>Evaluator Demo Sample</span>
-            )}
-          </div>
+          <p className="sora" style={{ fontSize: 14, fontWeight: 600, color: "var(--fg)" }}>
+            {analysis?.filename || "Document Analysis"}
+          </p>
           <p style={{ fontSize: 11.5, marginTop: 2 }}>
             <span style={{ color: "var(--fg3)" }}>Legal Analysis · </span>
             <span style={{ color: "var(--green)" }}>✓ Evidence-grounded document analysis</span>
@@ -1269,19 +1059,9 @@ function DocumentsView({ setPage, onUpload, onSelectDoc }: { setPage: (p: Page) 
             <h1 className="sora" style={{ fontSize: 34, fontWeight: 800, color: "var(--fg)", marginBottom: 6, letterSpacing: "-0.03em" }}>Documents</h1>
             <p style={{ fontSize: 13.5, color: "var(--fg2)" }}>Upload and analyse your legal documents</p>
           </div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button
-              className="btn-ghost"
-              onClick={() => { onSelectDoc(SAMPLE_LEASE_DOC_ID); setPage("doc-analysis"); }}
-              style={{ cursor: "pointer", fontSize: 12.5 }}
-              aria-label="Load Sample Lease Agreement for testing"
-            >
-              📄 Try Sample Lease
-            </button>
-            <button className="btn-blue" onClick={onUpload} style={{ cursor: "pointer" }} aria-label="Upload document file">
-              <Ico c={<I.Upload />} s={14} /> Upload
-            </button>
-          </div>
+          <button className="btn-blue" onClick={onUpload} style={{ cursor: "pointer" }} aria-label="Upload document file">
+            <Ico c={<I.Upload />} s={14} /> Upload
+          </button>
         </div>
 
         <button onClick={onUpload}
@@ -1299,45 +1079,28 @@ function DocumentsView({ setPage, onUpload, onSelectDoc }: { setPage: (p: Page) 
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {loading ? (
             <p style={{ textAlign: "center", color: "var(--fg3)", padding: 20 }} role="status" aria-live="polite">Loading uploaded documents...</p>
+          ) : docs.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "36px 20px", color: "var(--fg3)", borderRadius: 14, background: "var(--surface)", border: "1px solid var(--border)" }}>
+              <p className="sora" style={{ fontSize: 14, color: "var(--fg)", marginBottom: 4, fontWeight: 600 }}>No documents uploaded yet</p>
+              <p style={{ fontSize: 12.5 }}>Upload a contract, lease, or agreement above to begin analysis.</p>
+            </div>
           ) : (
-            <>
-              {/* Always show the sample document item so evaluator can test directly */}
-              <div
-                style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 18px", borderRadius: 14, background: "var(--surface)", border: "1px solid rgba(61,127,255,.22)", cursor: "pointer" }}
-                onClick={() => { onSelectDoc(SAMPLE_LEASE_DOC_ID); setPage("doc-analysis"); }}
-                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(61,127,255,.4)"; (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(61,127,255,.22)"; (e.currentTarget as HTMLElement).style.transform = "none"; }}>
+            docs.map(doc => (
+              <div key={doc.id}
+                style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 18px", borderRadius: 14, background: "var(--surface)", border: "1px solid var(--border)", cursor: "pointer" }}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(61,127,255,.22)"; (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border)"; (e.currentTarget as HTMLElement).style.transform = "none"; }}>
                 <div style={{ width: 42, height: 42, borderRadius: 10, background: "rgba(61,127,255,.1)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "var(--blue2)" }}>
                   <Ico c={<I.Doc />} s={20} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <p className="sora" style={{ fontSize: 13.5, fontWeight: 600, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Sample_Residential_Lease_Agreement.pdf</p>
-                    <span className="badge bd-blue" style={{ fontSize: 9.5 }}>Demo Sample</span>
-                  </div>
-                  <p style={{ fontSize: 11.5, color: "var(--fg3)", marginTop: 2 }}>PDF · 5 Clauses · Grounded Q&amp;A Ready</p>
+                  <p className="sora" style={{ fontSize: 13.5, fontWeight: 600, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.filename}</p>
+                  <p style={{ fontSize: 11.5, color: "var(--fg3)", marginTop: 2 }}>{doc.file_type} · {(doc.file_size_bytes / 1024).toFixed(0)} KB</p>
                 </div>
                 <span className="badge bd-green">Analysed</span>
-                <button className="btn-ghost" onClick={(e) => { e.stopPropagation(); onSelectDoc(SAMPLE_LEASE_DOC_ID); setPage("doc-analysis"); }} style={{ fontSize: 12, cursor: "pointer" }} aria-label="Open analysis for Sample Residential Lease Agreement">Open</button>
+                <button className="btn-ghost" onClick={() => { onSelectDoc(doc.id); setPage("doc-analysis"); }} style={{ fontSize: 12, cursor: "pointer" }} aria-label={`Open analysis for ${doc.filename}`}>Open</button>
               </div>
-
-              {docs.map(doc => (
-                <div key={doc.id}
-                  style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 18px", borderRadius: 14, background: "var(--surface)", border: "1px solid var(--border)", cursor: "pointer" }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "rgba(61,127,255,.22)"; (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border)"; (e.currentTarget as HTMLElement).style.transform = "none"; }}>
-                  <div style={{ width: 42, height: 42, borderRadius: 10, background: "rgba(61,127,255,.1)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "var(--blue2)" }}>
-                    <Ico c={<I.Doc />} s={20} />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p className="sora" style={{ fontSize: 13.5, fontWeight: 600, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.filename}</p>
-                    <p style={{ fontSize: 11.5, color: "var(--fg3)", marginTop: 2 }}>{doc.file_type} · {(doc.file_size_bytes / 1024).toFixed(0)} KB</p>
-                  </div>
-                  <span className="badge bd-green">Analysed</span>
-                  <button className="btn-ghost" onClick={() => { onSelectDoc(doc.id); setPage("doc-analysis"); }} style={{ fontSize: 12, cursor: "pointer" }} aria-label={`Open analysis for ${doc.filename}`}>Open</button>
-                </div>
-              ))}
-            </>
+            ))
           )}
         </div>
       </div>
@@ -1501,7 +1264,7 @@ export default function App() {
           </div>
         </div>
 
-        {page === "home"         && <><HomePage setPage={setPage} onUpload={() => setUploadOpen(true)} onSelectDoc={id => setSelectedDocId(id)} /><Composer onSend={(text) => { setInitialQuery({id: String(Date.now()), text}); setPage("chat"); }} onUpload={() => setUploadOpen(true)} /></>}
+        {page === "home"         && <><HomePage setPage={setPage} onUpload={() => setUploadOpen(true)} /><Composer onSend={(text) => { setInitialQuery({id: String(Date.now()), text}); setPage("chat"); }} onUpload={() => setUploadOpen(true)} /></>}
         {page === "chat"         && <ChatView 
             key={activeConversationId} 
             onUpload={() => setUploadOpen(true)} 
