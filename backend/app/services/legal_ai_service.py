@@ -46,6 +46,8 @@ class LegalAIService:
         "reference_snippet": None,
         "found_in_document": False,
     }
+    _genai_client: Optional[Any] = None
+    _cached_api_key: Optional[str] = None
 
     @staticmethod
     def _clean_json_string(text: str) -> str:
@@ -253,6 +255,23 @@ class LegalAIService:
         return None
 
     @classmethod
+    def _get_genai_client(cls, api_key: str) -> Optional[Any]:
+        """Obtain or reuse cached Google GenAI Client instance."""
+        if cls._genai_client is not None and cls._cached_api_key == api_key:
+            return cls._genai_client
+
+        try:
+            from google import genai
+            cls._genai_client = genai.Client(api_key=api_key)
+            cls._cached_api_key = api_key
+            return cls._genai_client
+        except Exception as e:
+            logger.warning(f"Failed to initialize google.genai Client: {e}")
+            cls._genai_client = None
+            cls._cached_api_key = None
+            return None
+
+    @classmethod
     def _call_gemini(cls, prompt: str) -> Optional[str]:
         """Call Google Gemini API using official SDK if key is configured."""
         api_key = settings.GEMINI_API_KEY
@@ -261,20 +280,20 @@ class LegalAIService:
             return None
 
         try:
-            from google import genai
-            from google.genai import types
+            client = cls._get_genai_client(api_key)
+            if client is not None:
+                from google.genai import types
 
-            client = genai.Client(api_key=api_key)
-            response = client.models.generate_content(
-                model=settings.GEMINI_MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.2,
+                response = client.models.generate_content(
+                    model=settings.GEMINI_MODEL,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.2,
+                    )
                 )
-            )
-            if response and response.text:
-                return response.text
+                if response and response.text:
+                    return response.text
 
         except Exception as e:
             logger.warning(f"google.genai SDK call failed: {e}. Trying legacy google.generativeai fallback...")

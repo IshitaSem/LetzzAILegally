@@ -3,10 +3,14 @@
  * Handles communications with the FastAPI backend.
  */
 
-// Configurable API base URL: defaults to Vite proxy '/api' or environment variable VITE_API_BASE_URL
+// Production PythonAnywhere backend deployment URL
+const PROD_API_URL = "https://ishhhi.pythonanywhere.com";
+
+// Configurable API base URL: defaults to Vite proxy '/api' in development,
+// and to live PythonAnywhere backend in production if VITE_API_BASE_URL is not set.
 const API_BASE = import.meta.env.VITE_API_BASE_URL 
   ? `${import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '')}/api` 
-  : '/api';
+  : (import.meta.env.PROD ? `${PROD_API_URL}/api` : '/api');
 
 export interface SourceCitation {
   title: string;

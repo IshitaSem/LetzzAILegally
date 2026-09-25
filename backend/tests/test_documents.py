@@ -629,3 +629,68 @@ def test_not_found_responses_have_null_snippet():
     data = ask_res.json()
     assert data["found_in_document"] is False
     assert data["reference_snippet"] is None
+
+def test_ask_document_empty_or_whitespace_question():
+    file_content = b"RESIDENTIAL LEASE AGREEMENT\nRent is $685 per month."
+    upload_res = client.post(
+        "/api/documents/upload",
+        files={"file": ("lease_whitespace.txt", io.BytesIO(file_content), "text/plain")}
+    )
+    assert upload_res.status_code == 201
+    doc_id = upload_res.json()["id"]
+
+    for empty_q in ["", "   ", "\t\n"]:
+        ask_res = client.post(
+            f"/api/documents/{doc_id}/ask",
+            json={"question": empty_q}
+        )
+        assert ask_res.status_code in [400, 422]
+
+def test_scanned_image_pdf_notice():
+    import fitz
+    doc = fitz.open()
+    doc.new_page()
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    upload_res = client.post(
+        "/api/documents/upload",
+        files={"file": ("scanned_mock.pdf", io.BytesIO(pdf_bytes), "application/pdf")}
+    )
+    assert upload_res.status_code == 201
+    doc_id = upload_res.json()["id"]
+
+    detail_res = client.get(f"/api/documents/{doc_id}")
+    assert detail_res.status_code == 200
+    snippet = detail_res.json()["extracted_text_snippet"]
+    assert "scanned or contains non-selectable" in snippet
+
+def test_document_checklist_endpoint():
+    file_content = b"COMMERCIAL LEASE\nSecurity Deposit: $2,500 due on signing. Term: 24 months."
+    upload_res = client.post(
+        "/api/documents/upload",
+        files={"file": ("commercial_lease.txt", io.BytesIO(file_content), "text/plain")}
+    )
+    assert upload_res.status_code == 201
+    doc_id = upload_res.json()["id"]
+
+    res = client.post(f"/api/documents/{doc_id}/checklist")
+    assert res.status_code == 200
+    data = res.json()
+    assert "document_id" in data
+    assert "important_items_to_review" in data
+    assert "questions_for_legal_professional" in data
+    assert "disclaimer" in data
+
+def test_cors_preflight_headers():
+    response = client.options(
+        "/api/chat",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type",
+        }
+    )
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    assert "POST" in response.headers.get("access-control-allow-methods", "")
