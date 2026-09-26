@@ -163,6 +163,20 @@ export const api = {
   },
 
   /**
+   * Delete uploaded document
+   */
+  async deleteDocument(docId: string): Promise<{ message: string }> {
+    const res = await fetch(`${API_BASE}/documents/${docId}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      throw new Error(errData.detail || `Failed to delete document (${res.status})`);
+    }
+    return await res.json();
+  },
+
+  /**
    * Analyze document
    */
   async analyzeDocument(docId: string): Promise<DocumentAnalysisResponse> {

@@ -694,3 +694,91 @@ def test_cors_preflight_headers():
     assert response.status_code == 200
     assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"
     assert "POST" in response.headers.get("access-control-allow-methods", "")
+
+def test_document_analysis_and_checklist_caching(monkeypatch):
+    from app.services.document_service import DocumentService
+    from app.services.legal_ai_service import LegalAIService
+
+    call_count = {"analyze": 0, "checklist": 0}
+
+    async def mock_analyze(text, filename):
+        call_count["analyze"] += 1
+        return {
+            "title": "Mock Lease Analysis",
+            "overview": "Clear lease terms overview.",
+            "risk_level": "Low",
+            "total_clauses_identified": 1,
+            "key_clauses": [{"title": "Rent", "summary": "$1,500 due on 1st"}],
+            "obligations": ["Pay rent on time"],
+            "important_dates": [{"label": "Due Date", "date_or_period": "1st of each month"}],
+            "potential_concerns": [],
+        }
+
+    async def mock_checklist(text, filename):
+        call_count["checklist"] += 1
+        return {
+            "important_items_to_review": [{"category": "Financial", "item": "Check security deposit terms", "priority": "High"}],
+            "questions_for_legal_professional": ["Ask about renewal clause"],
+            "action_items_and_deadlines": ["Inspect apartment on move-in day"],
+        }
+
+    monkeypatch.setattr(LegalAIService, "analyze_document", mock_analyze)
+    monkeypatch.setattr(LegalAIService, "checklist_document", mock_checklist)
+
+    file_content = b"RESIDENTIAL LEASE\nRent is $1,500 due on 1st.\nTerm is 12 months."
+    upload_res = client.post(
+        "/api/documents/upload",
+        files={"file": ("caching_test.txt", io.BytesIO(file_content), "text/plain")}
+    )
+    assert upload_res.status_code == 201
+    doc_id = upload_res.json()["id"]
+
+    # First analyze call executes AI service and caches
+    res1 = client.post(f"/api/documents/{doc_id}/analyze")
+    assert res1.status_code == 200
+    assert call_count["analyze"] == 1
+    cached = DocumentService.get_cached_analysis(doc_id)
+    assert cached is not None
+    assert cached["title"] == "Mock Lease Analysis"
+
+    # Second analyze call must hit cache without invoking mock_analyze again
+    res2 = client.post(f"/api/documents/{doc_id}/analyze")
+    assert res2.status_code == 200
+    assert call_count["analyze"] == 1
+    assert res2.json()["title"] == "Mock Lease Analysis"
+
+    # First checklist call executes AI service and caches
+    chk1 = client.post(f"/api/documents/{doc_id}/checklist")
+    assert chk1.status_code == 200
+    assert call_count["checklist"] == 1
+    assert DocumentService.get_cached_checklist(doc_id) is not None
+
+    # Second checklist call must hit cache without invoking mock_checklist again
+    chk2 = client.post(f"/api/documents/{doc_id}/checklist")
+    assert chk2.status_code == 200
+    assert call_count["checklist"] == 1
+
+    client.delete(f"/api/documents/{doc_id}")
+
+def test_document_delete_path_traversal_protection(tmp_path):
+    from app.services.document_service import DocumentService
+    # Create a dummy file outside the uploads directory
+    external_file = tmp_path / "important_system_file.txt"
+    external_file.write_text("critical data")
+
+    file_content = b"TEST AGREEMENT\nContent here."
+    upload_res = client.post(
+        "/api/documents/upload",
+        files={"file": ("traversal_test.txt", io.BytesIO(file_content), "text/plain")}
+    )
+    assert upload_res.status_code == 201
+    doc_id = upload_res.json()["id"]
+
+    # Tamper with file_path to point to outside file
+    doc = DocumentService.get_document(doc_id)
+    doc["file_path"] = str(external_file)
+
+    # Deleting the document record must NOT delete the external file
+    DocumentService.delete_document(doc_id)
+    assert external_file.exists(), "External file outside upload dir must not be deleted"
+

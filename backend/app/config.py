@@ -10,8 +10,8 @@ class Settings(BaseSettings):
         "LetzAiLegally is an AI-powered legal assistant designed to help users understand "
         "legal information, analyze legal documents, ask legal questions, and find supporting legal sources."
     )
-    ENV: str = "development"
-    DEBUG: bool = True
+    ENV: str = os.getenv("ENV", "production")
+    DEBUG: bool = os.getenv("DEBUG", "false").lower() in ("true", "1", "yes")
     PORT: int = 8000
     HOST: str = "127.0.0.1"
 

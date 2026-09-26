@@ -22,6 +22,16 @@ export function DocumentsView({ setPage, onUpload, onSelectDoc }: { setPage: (p:
     fetchDocs();
   }, []);
 
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    try {
+      await api.deleteDocument(id);
+      setDocs(prev => prev.filter(d => d.id !== id));
+    } catch (err) {
+      // Deletion error handled gracefully
+    }
+  };
+
   return (
     <div className="scroll" style={{ flex: 1, padding: "40px", overflowY: "auto", position: "relative" }}>
       <Star x="90%" y="6%" size={12} opacity={0.25} />
@@ -71,6 +81,14 @@ export function DocumentsView({ setPage, onUpload, onSelectDoc }: { setPage: (p:
                 </div>
                 <span className="badge bd-green">Analysed</span>
                 <button className="btn-ghost" onClick={() => { onSelectDoc(doc.id); setPage("doc-analysis"); }} style={{ fontSize: 12, cursor: "pointer" }} aria-label={`Open analysis for ${doc.filename}`}>Open</button>
+                <button
+                  className="btn-ghost"
+                  onClick={(e) => handleDelete(e, doc.id)}
+                  style={{ fontSize: 12, cursor: "pointer", color: "var(--fg3)", padding: "4px 8px" }}
+                  aria-label={`Delete ${doc.filename}`}
+                >
+                  <Ico c={<I.Trash />} s={13} />
+                </button>
               </div>
             ))
           )}

@@ -1,3 +1,4 @@
+import logging
 from typing import List
 from fastapi import APIRouter, File, UploadFile, HTTPException, status
 from app.schemas import (
@@ -77,9 +78,16 @@ async def delete_document(document_id: str):
 async def analyze_document(document_id: str):
     """Perform AI document analysis (plain-language overview, key clauses, dates, concerns)."""
     doc = DocumentService.get_document(document_id)
-    extracted_text = doc.get("extracted_text", "")
+    cached = DocumentService.get_cached_analysis(document_id)
 
-    res = await LegalAIService.analyze_document(extracted_text, doc.get("filename", "document.pdf"))
+    if cached:
+        res = cached
+    else:
+        extracted_text = doc.get("extracted_text", "")
+        res = await LegalAIService.analyze_document(extracted_text, doc.get("filename", "document.pdf"))
+        # Cache when valid structured analysis is returned
+        if res.get("key_clauses") or (res.get("overview") and not res.get("overview", "").startswith("Document analysis is not available")):
+            DocumentService.set_cached_analysis(document_id, res)
 
     return DocumentAnalysisResponse(
         document_id=doc["id"],
@@ -94,8 +102,6 @@ async def analyze_document(document_id: str):
         potential_concerns=res.get("potential_concerns", []),
         disclaimer=LEGAL_DISCLAIMER
     )
-
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -130,9 +136,15 @@ async def ask_document_question(document_id: str, request: DocumentAskRequest):
 async def get_document_checklist(document_id: str):
     """Generate actionable legal review checklist for the document."""
     doc = DocumentService.get_document(document_id)
-    extracted_text = doc.get("extracted_text", "")
+    cached = DocumentService.get_cached_checklist(document_id)
 
-    res = await LegalAIService.checklist_document(extracted_text, doc.get("filename", "document.pdf"))
+    if cached:
+        res = cached
+    else:
+        extracted_text = doc.get("extracted_text", "")
+        res = await LegalAIService.checklist_document(extracted_text, doc.get("filename", "document.pdf"))
+        if res.get("important_items_to_review"):
+            DocumentService.set_cached_checklist(document_id, res)
 
     return DocumentChecklistResponse(
         document_id=doc["id"],

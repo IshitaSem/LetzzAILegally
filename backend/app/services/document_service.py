@@ -153,12 +153,35 @@ class DocumentService:
         return list(_DOCUMENTS_STORE.values())
 
     @classmethod
+    def get_cached_analysis(cls, doc_id: str) -> Optional[Dict[str, Any]]:
+        doc = cls.get_document(doc_id)
+        return doc.get("analysis")
+
+    @classmethod
+    def set_cached_analysis(cls, doc_id: str, analysis: Dict[str, Any]) -> None:
+        doc = cls.get_document(doc_id)
+        doc["analysis"] = analysis
+
+    @classmethod
+    def get_cached_checklist(cls, doc_id: str) -> Optional[Dict[str, Any]]:
+        doc = cls.get_document(doc_id)
+        return doc.get("checklist")
+
+    @classmethod
+    def set_cached_checklist(cls, doc_id: str, checklist: Dict[str, Any]) -> None:
+        doc = cls.get_document(doc_id)
+        doc["checklist"] = checklist
+
+    @classmethod
     def delete_document(cls, doc_id: str) -> bool:
         doc = cls.get_document(doc_id)
         file_path = doc.get("file_path")
         if file_path and os.path.exists(file_path):
             try:
-                os.remove(file_path)
+                resolved_file = Path(file_path).resolve()
+                upload_dir_resolved = Path(settings.UPLOAD_DIR).resolve()
+                if upload_dir_resolved == resolved_file.parent or upload_dir_resolved in resolved_file.parents:
+                    os.remove(resolved_file)
             except OSError:
                 pass
         del _DOCUMENTS_STORE[doc_id]

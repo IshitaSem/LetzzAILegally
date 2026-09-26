@@ -20,6 +20,11 @@ export function UploadModal({ onClose, onDone }: { onClose: () => void; onDone: 
   }, [onClose]);
 
   const processFile = async (file: File) => {
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMsg("File size exceeds 10MB limit. Please upload a smaller legal document.");
+      setPhase("error");
+      return;
+    }
     setPhase("up");
     setPct(20);
 
