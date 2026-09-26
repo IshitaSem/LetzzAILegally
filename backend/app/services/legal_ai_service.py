@@ -307,12 +307,6 @@ class LegalAIService:
             logger.info("[Gemini] GEMINI_API_KEY is set to placeholder 'your_gemini_api_key_here'. Using dynamic fallback.")
             return None, "MOCK_MODE"
 
-        client = cls._get_genai_client(api_key)
-        if client is None:
-            return None, "Failed to initialize Google GenAI client. Please check your credentials."
-
-        from google.genai import types
-
         # Resilient candidate model fallback order
         candidate_models = [settings.GEMINI_MODEL]
         for fallback_model in ["gemini-2.0-flash", "gemini-1.5-flash"]:
@@ -321,38 +315,120 @@ class LegalAIService:
 
         last_error = "Unknown error calling Gemini API"
 
-        for model_name in candidate_models:
-            try:
-                logger.info(
-                    f"[Gemini Call] Calling Gemini model='{model_name}' | prompt_chars={len(prompt)}"
-                )
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        temperature=0.2,
-                    )
-                )
-                if response and response.text:
-                    logger.info(
-                        f"[Gemini Response] Model='{model_name}' returned response | response_chars={len(response.text)}"
-                    )
-                    return response.text, None
-                else:
-                    last_error = f"Gemini model '{model_name}' returned an empty response"
-            except Exception as e:
-                err_msg = str(e)
-                last_error = err_msg
-                logger.warning(f"[Gemini Error] Model '{model_name}' call failed: {err_msg}")
-                # Try fallback candidate model if model was not found
-                continue
+        # -------------------------------------------------------------------------
+        # Strategy 1: Direct HTTP REST Call (Most reliable across PythonAnywhere proxy & local dev)
+        # -------------------------------------------------------------------------
+        proxy_url = settings.effective_proxy
+        proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
 
-        # Legacy fallback if available
+        try:
+            import requests
+
+            headers = {"Content-Type": "application/json"}
+            payload = {
+                "contents": [
+                    {
+                        "parts": [
+                            {"text": prompt}
+                        ]
+                    }
+                ],
+                "generationConfig": {
+                    "responseMimeType": "application/json",
+                    "temperature": 0.2,
+                }
+            }
+
+            for model_name in candidate_models:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+                try:
+                    logger.info(
+                        f"[Gemini REST] Calling Gemini model='{model_name}' | proxy={proxy_url} | prompt_chars={len(prompt)}"
+                    )
+                    resp = requests.post(
+                        url,
+                        headers=headers,
+                        json=payload,
+                        proxies=proxies,
+                        timeout=60.0
+                    )
+                    if resp.status_code == 200:
+                        res_json = resp.json()
+                        candidates = res_json.get("candidates", [])
+                        if candidates:
+                            parts = candidates[0].get("content", {}).get("parts", [])
+                            if parts and "text" in parts[0]:
+                                text_content = parts[0]["text"]
+                                logger.info(
+                                    f"[Gemini REST Success] Model '{model_name}' returned response | response_chars={len(text_content)}"
+                                )
+                                return text_content, None
+                        last_error = f"Gemini model '{model_name}' returned an empty response"
+                    else:
+                        error_detail = resp.text
+                        try:
+                            err_json = resp.json()
+                            if "error" in err_json and "message" in err_json["error"]:
+                                error_detail = err_json["error"]["message"]
+                        except Exception:
+                            pass
+                        last_error = f"Gemini model '{model_name}' returned HTTP {resp.status_code}: {error_detail}"
+                        logger.warning(f"[Gemini REST Error] {last_error}")
+                except Exception as req_err:
+                    last_error = str(req_err)
+                    logger.warning(f"[Gemini REST Exception] Model '{model_name}' call failed: {req_err}")
+                    continue
+
+            # If REST returned an official API error (e.g. 400 bad key, 429 quota), return it directly
+            if "HTTP 4" in last_error or "HTTP 5" in last_error or "Resource exhausted" in last_error or "API key not valid" in last_error:
+                return None, last_error
+
+        except Exception as rest_setup_err:
+            logger.warning(f"[Gemini REST Setup Exception] {rest_setup_err}")
+
+        # -------------------------------------------------------------------------
+        # Strategy 2: google.genai SDK Fallback
+        # -------------------------------------------------------------------------
+        try:
+            client = cls._get_genai_client(api_key)
+            if client is not None:
+                from google.genai import types
+
+                for model_name in candidate_models:
+                    try:
+                        logger.info(
+                            f"[Gemini SDK Fallback] Calling Gemini model='{model_name}' | prompt_chars={len(prompt)}"
+                        )
+                        response = client.models.generate_content(
+                            model=model_name,
+                            contents=prompt,
+                            config=types.GenerateContentConfig(
+                                response_mime_type="application/json",
+                                temperature=0.2,
+                            )
+                        )
+                        if response and response.text:
+                            logger.info(
+                                f"[Gemini SDK Response] Model='{model_name}' returned response | response_chars={len(response.text)}"
+                            )
+                            return response.text, None
+                        else:
+                            last_error = f"Gemini model '{model_name}' returned an empty response"
+                    except Exception as e:
+                        err_msg = str(e)
+                        last_error = err_msg
+                        logger.warning(f"[Gemini SDK Error] Model '{model_name}' call failed: {err_msg}")
+                        continue
+        except Exception as sdk_ex:
+            logger.warning(f"[Gemini SDK Exception] {sdk_ex}")
+
+        # -------------------------------------------------------------------------
+        # Strategy 3: Legacy google.generativeai SDK Fallback
+        # -------------------------------------------------------------------------
         try:
             import google.generativeai as legacy_genai
             legacy_genai.configure(api_key=api_key)
-            for m in ["gemini-2.0-flash", "gemini-1.5-flash"]:
+            for m in candidate_models:
                 try:
                     legacy_model = legacy_genai.GenerativeModel(m)
                     res = legacy_model.generate_content(prompt)

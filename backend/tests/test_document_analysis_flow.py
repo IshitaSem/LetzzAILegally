@@ -231,3 +231,44 @@ def test_genai_client_initialization_with_proxy(monkeypatch):
     # Reset cached client
     LegalAIService._genai_client = None
     LegalAIService._cached_api_key = None
+
+def test_gemini_rest_call_with_proxy(monkeypatch):
+    """Verify that _call_gemini_with_error routes through the proxy and parses responses correctly."""
+    import requests
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "AIzaSyTestKeyForRestCall")
+    monkeypatch.setattr(settings, "HTTPS_PROXY", "http://proxy.server:3128")
+
+    captured_requests = []
+
+    class MockResponse:
+        def __init__(self, status_code, json_data):
+            self.status_code = status_code
+            self._json = json_data
+            self.text = str(json_data)
+        def json(self):
+            return self._json
+
+    def mock_post(url, headers=None, json=None, proxies=None, timeout=None):
+        captured_requests.append({
+            "url": url,
+            "proxies": proxies,
+            "json": json
+        })
+        return MockResponse(200, {
+            "candidates": [{
+                "content": {
+                    "parts": [{"text": '{"title": "Commercial Lease", "risk_level": "Low"}'}]
+                }
+            }]
+        })
+
+    monkeypatch.setattr(requests, "post", mock_post)
+
+    text, err = LegalAIService._call_gemini_with_error("Summarize this lease")
+    assert err is None
+    assert "Commercial Lease" in text
+    assert len(captured_requests) > 0
+    assert captured_requests[0]["proxies"] == {
+        "http": "http://proxy.server:3128",
+        "https": "http://proxy.server:3128"
+    }
