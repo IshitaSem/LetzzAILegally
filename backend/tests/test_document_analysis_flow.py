@@ -182,3 +182,32 @@ def test_gemini_failure_returns_clear_502_error(monkeypatch):
     assert "Resource exhausted" in err_detail
     # Must NOT return 200 with "Analysis unavailable"
     assert analyze_res.status_code != 200
+
+def test_pythonanywhere_proxy_auto_detection(monkeypatch):
+    """Verify that settings.effective_proxy detects PythonAnywhere environment automatically."""
+    from app.config import Settings
+
+    monkeypatch.setenv("PYTHONANYWHERE_SITE", "www.pythonanywhere.com")
+    monkeypatch.delenv("HTTP_PROXY", raising=False)
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("http_proxy", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+
+    s = Settings()
+    assert s.effective_proxy == "http://proxy.server:3128"
+
+def test_genai_client_initialization_with_proxy(monkeypatch):
+    """Verify LegalAIService._get_genai_client creates client with proxy http_options when proxy is active."""
+    monkeypatch.setattr(settings, "HTTPS_PROXY", "http://proxy.server:3128")
+    monkeypatch.setattr(LegalAIService, "_genai_client", None)
+    monkeypatch.setattr(LegalAIService, "_cached_api_key", None)
+
+    client_instance = LegalAIService._get_genai_client("test_api_key_123")
+    assert client_instance is not None
+    # Verify httpx client has proxy mount configured
+    mounts = client_instance._api_client._httpx_client._mounts
+    assert len(mounts) > 0
+
+    # Reset cached client
+    LegalAIService._genai_client = None
+    LegalAIService._cached_api_key = None

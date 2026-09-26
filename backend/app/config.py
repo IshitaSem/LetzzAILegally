@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -18,6 +19,10 @@ class Settings(BaseSettings):
     # AI Configuration
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "mock")
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+    # Proxy Configuration (for environments requiring outbound proxy like PythonAnywhere free tier)
+    HTTP_PROXY: Optional[str] = os.getenv("HTTP_PROXY", None)
+    HTTPS_PROXY: Optional[str] = os.getenv("HTTPS_PROXY", None)
 
     # Document Uploads
     UPLOAD_DIR: str = str(BASE_DIR / "uploads")
@@ -39,7 +44,37 @@ class Settings(BaseSettings):
             return ["*"]
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
 
+    @property
+    def effective_proxy(self) -> Optional[str]:
+        """Detect outbound proxy URL from config, environment, or PythonAnywhere environment."""
+        proxy = (
+            self.HTTPS_PROXY
+            or self.HTTP_PROXY
+            or os.environ.get("https_proxy")
+            or os.environ.get("http_proxy")
+            or os.environ.get("HTTPS_PROXY")
+            or os.environ.get("HTTP_PROXY")
+        )
+        if not proxy:
+            # Auto-detect PythonAnywhere environment (free tier outbound proxy)
+            is_pythonanywhere = (
+                os.environ.get("PYTHONANYWHERE_SITE")
+                or os.environ.get("PYTHONANYWHERE_DOMAIN")
+                or "pythonanywhere" in os.environ.get("HOSTNAME", "").lower()
+                or "pythonanywhere" in str(BASE_DIR).lower()
+                or os.path.exists("/var/log/pythonanywhere")
+                or os.path.exists("/etc/pythonanywhere")
+            )
+            if is_pythonanywhere:
+                proxy = "http://proxy.server:3128"
+        return proxy
+
 settings = Settings()
+
+# If proxy is configured or detected, populate standard environment variables
+if settings.effective_proxy:
+    for var in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
+        os.environ.setdefault(var, settings.effective_proxy)
 
 # Ensure uploads directory exists
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)

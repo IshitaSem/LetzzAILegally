@@ -257,13 +257,24 @@ class LegalAIService:
 
     @classmethod
     def _get_genai_client(cls, api_key: str) -> Optional[Any]:
-        """Obtain or reuse cached Google GenAI Client instance."""
+        """Obtain or reuse cached Google GenAI Client instance with outbound proxy support."""
         if cls._genai_client is not None and cls._cached_api_key == api_key:
             return cls._genai_client
 
         try:
             from google import genai
-            cls._genai_client = genai.Client(api_key=api_key)
+            from google.genai import types
+
+            proxy_url = settings.effective_proxy
+            http_options = None
+            if proxy_url:
+                logger.info(f"[GenAI Client] Configuring Client with outbound proxy: {proxy_url}")
+                http_options = types.HttpOptions(
+                    client_args={"proxy": proxy_url, "trust_env": True},
+                    async_client_args={"proxy": proxy_url, "trust_env": True},
+                )
+
+            cls._genai_client = genai.Client(api_key=api_key, http_options=http_options)
             cls._cached_api_key = api_key
             return cls._genai_client
         except Exception as e:
@@ -621,6 +632,11 @@ class LegalAIService:
             return cls._dynamic_document_extract(document_text, filename)
 
         # Real Gemini key was provided but failed: return a clear error instead of silently producing "Analysis unavailable"
+        if "Cannot assign requested address" in str(gemini_error) or "99" in str(gemini_error):
+            gemini_error = (
+                f"{gemini_error} (Outbound connection failed. If running on PythonAnywhere free tier, "
+                f"outbound requests must use proxy 'http://proxy.server:3128')."
+            )
         logger.error(f"[Document Analysis Error] Gemini analysis failed for '{filename}': {gemini_error}")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
