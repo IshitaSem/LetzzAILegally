@@ -108,7 +108,7 @@ Instant extraction of critical contract facets:
 ```
 
 ### Generative AI Model Configuration
-* **Configured Model:** `gemini-2.5-flash` (specified via `GEMINI_MODEL` with resilient automatic fallback to `gemini-2.0-flash` and `gemini-2.5-flash-lite`).
+* **Configured Model:** `gemini-2.5-flash` (specified via `GEMINI_MODEL` with resilient automatic fallback to `gemini-3.5-flash-lite`, `gemini-3.5-flash`, and `gemini-2.5-flash-lite`).
 * **Client Caching:** The backend caches the `genai.Client` singleton instance per API key to eliminate connection overhead and improve response latency.
 * **Mock Fallback:** Automated test suites run with high fidelity under mock mode when an external API key is not configured, guaranteeing reliable CI/CD pipelines.
 

@@ -22,37 +22,60 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "mock")
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
     GEMINI_FALLBACK_MODELS: list[str] = [
+        "gemini-3.5-flash-lite",
+        "gemini-3.5-flash",
         "gemini-2.5-flash",
-        "gemini-2.0-flash",
         "gemini-2.5-flash-lite",
-        "gemini-2.0-flash-lite",
     ]
+
+    @staticmethod
+    def _is_obsolete_model(model_name: str) -> bool:
+        """Check if a model name belongs to a retired generation (1.5, 2.0, 1.0, etc.)."""
+        name = str(model_name).lower().strip()
+        return (
+            "1.5" in name
+            or "2.0" in name
+            or "1.0" in name
+            or name in ("gemini-pro", "gemini-flash")
+        )
 
     @field_validator("GEMINI_MODEL", mode="after")
     @classmethod
     def sanitize_gemini_model(cls, v: str) -> str:
-        """Ensure obsolete 1.5 models are automatically upgraded to current 2.5-flash."""
-        if not v or "1.5" in v:
+        """Ensure obsolete 1.5, 2.0, and retired models are automatically upgraded to current 2.5-flash."""
+        if not v or cls._is_obsolete_model(v):
             return "gemini-2.5-flash"
         return v.strip()
 
     @field_validator("GEMINI_FALLBACK_MODELS", mode="before")
     @classmethod
     def parse_fallback_models(cls, v: Any) -> list[str]:
-        """Safely parse fallback models and filter obsolete 1.5 versions."""
+        """Safely parse fallback models and filter obsolete versions."""
+        defaults = [
+            "gemini-3.5-flash-lite",
+            "gemini-3.5-flash",
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+        ]
         if isinstance(v, str):
             parts = [p.strip() for p in v.split(",") if p.strip()]
-            return [p for p in parts if "1.5" not in p]
+            valid = [p for p in parts if not cls._is_obsolete_model(p)]
+            return valid if valid else defaults
         if isinstance(v, (list, tuple)):
-            return [str(p).strip() for p in v if str(p).strip() and "1.5" not in str(p)]
-        return ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash-lite"]
+            valid = [
+                str(p).strip()
+                for p in v
+                if str(p).strip() and not cls._is_obsolete_model(str(p))
+            ]
+            return valid if valid else defaults
+        return defaults
 
     @property
     def candidate_gemini_models(self) -> list[str]:
         """Return unique ordered list of active candidate Gemini models."""
         models: list[str] = []
         for m in [self.GEMINI_MODEL] + self.GEMINI_FALLBACK_MODELS:
-            if m and m not in models and "1.5" not in m:
+            if m and m not in models and not self._is_obsolete_model(m):
                 models.append(m)
         return models
 

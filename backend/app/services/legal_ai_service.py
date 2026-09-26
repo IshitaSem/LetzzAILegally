@@ -332,7 +332,6 @@ class LegalAIService:
                 ],
                 "generationConfig": {
                     "responseMimeType": "application/json",
-                    "temperature": 0.2,
                 }
             }
 
@@ -401,7 +400,6 @@ class LegalAIService:
                             contents=prompt,
                             config=types.GenerateContentConfig(
                                 response_mime_type="application/json",
-                                temperature=0.2,
                             )
                         )
                         if response and response.text:
