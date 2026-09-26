@@ -196,17 +196,37 @@ def test_pythonanywhere_proxy_auto_detection(monkeypatch):
     s = Settings()
     assert s.effective_proxy == "http://proxy.server:3128"
 
+def test_pythonanywhere_uvicorn_domain_socket_auto_detection(monkeypatch):
+    """Verify that settings.effective_proxy detects PythonAnywhere from Uvicorn's DOMAIN_SOCKET."""
+    from app.config import Settings
+
+    monkeypatch.delenv("PYTHONANYWHERE_SITE", raising=False)
+    monkeypatch.delenv("PYTHONANYWHERE_DOMAIN", raising=False)
+    monkeypatch.delenv("HTTP_PROXY", raising=False)
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("http_proxy", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.setenv("DOMAIN_SOCKET", "/var/sockets/ishhhi.pythonanywhere.com/socket")
+
+    s = Settings()
+    assert s.effective_proxy == "http://proxy.server:3128"
+
 def test_genai_client_initialization_with_proxy(monkeypatch):
-    """Verify LegalAIService._get_genai_client creates client with proxy http_options when proxy is active."""
+    """Verify LegalAIService._get_genai_client creates client with explicit proxy transport when proxy is active."""
     monkeypatch.setattr(settings, "HTTPS_PROXY", "http://proxy.server:3128")
     monkeypatch.setattr(LegalAIService, "_genai_client", None)
     monkeypatch.setattr(LegalAIService, "_cached_api_key", None)
 
     client_instance = LegalAIService._get_genai_client("test_api_key_123")
     assert client_instance is not None
-    # Verify httpx client has proxy mount configured
-    mounts = client_instance._api_client._httpx_client._mounts
-    assert len(mounts) > 0
+
+    # Verify httpx client has explicit transport proxy configured
+    httpx_client = client_instance._api_client._httpx_client
+    assert httpx_client is not None
+    transport = httpx_client._transport
+    proxy_url = getattr(getattr(transport, "_pool", None), "_proxy_url", None)
+    assert proxy_url is not None
+    assert b"proxy.server" in proxy_url.host
 
     # Reset cached client
     LegalAIService._genai_client = None

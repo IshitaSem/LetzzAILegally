@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -57,9 +58,13 @@ class Settings(BaseSettings):
         )
         if not proxy:
             # Auto-detect PythonAnywhere environment (free tier outbound proxy)
+            # Checks Uvicorn DOMAIN_SOCKET, CLI arguments, environment values, and paths
             is_pythonanywhere = (
                 os.environ.get("PYTHONANYWHERE_SITE")
                 or os.environ.get("PYTHONANYWHERE_DOMAIN")
+                or "pythonanywhere" in os.environ.get("DOMAIN_SOCKET", "").lower()
+                or any("pythonanywhere" in str(arg).lower() for arg in sys.argv)
+                or any("pythonanywhere" in str(v).lower() for v in os.environ.values())
                 or "pythonanywhere" in os.environ.get("HOSTNAME", "").lower()
                 or "pythonanywhere" in str(BASE_DIR).lower()
                 or os.path.exists("/var/log/pythonanywhere")
@@ -74,7 +79,7 @@ settings = Settings()
 # If proxy is configured or detected, populate standard environment variables
 if settings.effective_proxy:
     for var in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
-        os.environ.setdefault(var, settings.effective_proxy)
+        os.environ[var] = settings.effective_proxy
 
 # Ensure uploads directory exists
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)

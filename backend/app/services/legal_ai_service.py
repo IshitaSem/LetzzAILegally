@@ -262,6 +262,7 @@ class LegalAIService:
             return cls._genai_client
 
         try:
+            import httpx
             from google import genai
             from google.genai import types
 
@@ -269,7 +270,18 @@ class LegalAIService:
             http_options = None
             if proxy_url:
                 logger.info(f"[GenAI Client] Configuring Client with outbound proxy: {proxy_url}")
+                for var in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
+                    os.environ[var] = proxy_url
+
+                sync_transport = httpx.HTTPTransport(proxy=proxy_url)
+                sync_httpx = httpx.Client(transport=sync_transport, trust_env=True, timeout=60.0)
+
+                async_transport = httpx.AsyncHTTPTransport(proxy=proxy_url)
+                async_httpx = httpx.AsyncClient(transport=async_transport, trust_env=True, timeout=60.0)
+
                 http_options = types.HttpOptions(
+                    httpx_client=sync_httpx,
+                    httpx_async_client=async_httpx,
                     client_args={"proxy": proxy_url, "trust_env": True},
                     async_client_args={"proxy": proxy_url, "trust_env": True},
                 )

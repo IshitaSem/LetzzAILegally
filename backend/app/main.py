@@ -1,7 +1,14 @@
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api import health, chat, documents
+
+logger = logging.getLogger("uvicorn")
+logger.info(
+    f"[LetzAiLegally] Worker initialized | effective_proxy={settings.effective_proxy} | "
+    f"gemini_model={settings.GEMINI_MODEL} | api_key_configured={bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != 'mock')}"
+)
 
 app = FastAPI(
     title="LetzAiLegally API",
