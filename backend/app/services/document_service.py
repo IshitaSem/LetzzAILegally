@@ -2,11 +2,14 @@ import os
 import uuid
 import datetime
 import asyncio
+import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, List
-import fitz  # PyMuPDF
+import pymupdf as fitz
 from fastapi import UploadFile, HTTPException, status
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 # In-memory document metadata & extracted text store for fast hackathon performance
 # Also persisted to disk in upload_dir as JSON metadata files
@@ -52,18 +55,36 @@ class DocumentService:
             )
 
     @staticmethod
-    def extract_text(file_bytes: bytes, filename: str) -> str:
-        """Extract plain text safely based on file extension."""
+    def extract_text_and_meta(file_bytes: bytes, filename: str) -> tuple[str, int]:
+        """Extract plain text safely based on file extension and return (text, page_count)."""
         ext = Path(filename).suffix.lower()
         extracted_text = ""
+        page_count = 1
 
         try:
             if ext == ".pdf":
-                doc = fitz.open(stream=file_bytes, filetype="pdf")
+                try:
+                    doc = fitz.open(stream=file_bytes, filetype="pdf")
+                except Exception as pdf_err:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Invalid or corrupted PDF file '{filename}': {str(pdf_err)}"
+                    )
+
+                page_count = len(doc)
+                if page_count == 0:
+                    doc.close()
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"The uploaded PDF '{filename}' contains no pages."
+                    )
+
                 pages_text = []
-                for page_num in range(len(doc)):
+                for page_num in range(page_count):
                     page = doc[page_num]
-                    pages_text.append(page.get_text())
+                    p_text = page.get_text()
+                    if p_text and p_text.strip():
+                        pages_text.append(p_text.strip())
                 extracted_text = "\n\n".join(pages_text).strip()
                 doc.close()
 
@@ -80,13 +101,14 @@ class DocumentService:
                     doc = docx.Document(io.BytesIO(file_bytes))
                     extracted_text = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
                 except ImportError:
-                    # Fallback plain text string extraction if python-docx isn't present
                     extracted_text = file_bytes.decode("utf-8", errors="ignore")
 
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to process and extract text from document: {str(e)}"
+                detail=f"Failed to process and extract text from document '{filename}': {str(e)}"
             )
 
         if not extracted_text or not extracted_text.strip():
@@ -96,7 +118,13 @@ class DocumentService:
                 "Document metadata has been saved, but text extraction was limited.]"
             )
 
-        return extracted_text.strip()
+        return extracted_text.strip(), page_count
+
+    @staticmethod
+    def extract_text(file_bytes: bytes, filename: str) -> str:
+        """Extract plain text safely based on file extension."""
+        text, _ = DocumentService.extract_text_and_meta(file_bytes, filename)
+        return text
 
     @staticmethod
     def _write_file(file_path: Path, file_bytes: bytes) -> None:
@@ -117,7 +145,13 @@ class DocumentService:
         ext = Path(filename).suffix.lower()
 
         # Extract text asynchronously to prevent blocking event loop
-        extracted_text = await asyncio.to_thread(cls.extract_text, file_bytes, filename)
+        extracted_text, page_count = await asyncio.to_thread(cls.extract_text_and_meta, file_bytes, filename)
+
+        # Diagnostic logging (never log sensitive text or secret keys)
+        logger.info(
+            f"[Document Upload] filename='{filename}' | mime_type='{file.content_type}' | "
+            f"size_bytes={len(file_bytes)} | page_count={page_count} | extracted_char_count={len(extracted_text)}"
+        )
 
         # Save binary file safely and asynchronously
         safe_filename = f"{doc_id}{ext}"
@@ -131,6 +165,7 @@ class DocumentService:
             "file_type": ext.lstrip(".").upper(),
             "file_size_bytes": len(file_bytes),
             "file_path": str(file_path),
+            "page_count": page_count,
             "extracted_text": extracted_text,
             "char_count": len(extracted_text),
             "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),

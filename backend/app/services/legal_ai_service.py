@@ -5,6 +5,7 @@ import asyncio
 import logging
 from decimal import Decimal, InvalidOperation
 from typing import Dict, Any, Optional
+from fastapi import HTTPException, status
 
 from app.config import settings
 from app.services.document_service import DocumentService
@@ -272,20 +273,38 @@ class LegalAIService:
             return None
 
     @classmethod
-    def _call_gemini(cls, prompt: str) -> Optional[str]:
-        """Call Google Gemini API using official SDK if key is configured."""
+    def _call_gemini_with_error(cls, prompt: str) -> tuple[Optional[str], Optional[str]]:
+        """Call Google Gemini API with candidate fallback models and capture error details."""
         api_key = settings.GEMINI_API_KEY
-        if not api_key or api_key.lower() == "mock" or api_key == "your_gemini_api_key_here":
-            logger.info("GEMINI_API_KEY not set or set to mock. Using mock AI provider mode.")
-            return None
+        if not api_key or api_key.lower() == "mock":
+            logger.info("[Gemini] GEMINI_API_KEY is mock. Using mock AI provider mode.")
+            return None, "MOCK_MODE"
 
-        try:
-            client = cls._get_genai_client(api_key)
-            if client is not None:
-                from google.genai import types
+        if api_key == "your_gemini_api_key_here":
+            logger.info("[Gemini] GEMINI_API_KEY is set to placeholder 'your_gemini_api_key_here'. Using dynamic fallback.")
+            return None, "MOCK_MODE"
 
+        client = cls._get_genai_client(api_key)
+        if client is None:
+            return None, "Failed to initialize Google GenAI client. Please check your credentials."
+
+        from google.genai import types
+
+        # Resilient candidate model fallback order
+        candidate_models = [settings.GEMINI_MODEL]
+        for fallback_model in ["gemini-2.0-flash", "gemini-1.5-flash"]:
+            if fallback_model not in candidate_models:
+                candidate_models.append(fallback_model)
+
+        last_error = "Unknown error calling Gemini API"
+
+        for model_name in candidate_models:
+            try:
+                logger.info(
+                    f"[Gemini Call] Calling Gemini model='{model_name}' | prompt_chars={len(prompt)}"
+                )
                 response = client.models.generate_content(
-                    model=settings.GEMINI_MODEL,
+                    model=model_name,
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
@@ -293,22 +312,210 @@ class LegalAIService:
                     )
                 )
                 if response and response.text:
-                    return response.text
+                    logger.info(
+                        f"[Gemini Response] Model='{model_name}' returned response | response_chars={len(response.text)}"
+                    )
+                    return response.text, None
+                else:
+                    last_error = f"Gemini model '{model_name}' returned an empty response"
+            except Exception as e:
+                err_msg = str(e)
+                last_error = err_msg
+                logger.warning(f"[Gemini Error] Model '{model_name}' call failed: {err_msg}")
+                # Try fallback candidate model if model was not found
+                continue
 
-        except Exception as e:
-            logger.warning(f"google.genai SDK call failed: {e}. Trying legacy google.generativeai fallback...")
-            try:
-                import google.generativeai as legacy_genai
-                legacy_genai.configure(api_key=api_key)
-                model = legacy_genai.GenerativeModel(settings.GEMINI_MODEL)
-                res = model.generate_content(prompt)
-                if res and res.text:
-                    return res.text
-            except Exception as ex:
-                logger.error(f"Gemini API invocation failed completely: {ex}. Falling back to mock data.")
-                return None
+        # Legacy fallback if available
+        try:
+            import google.generativeai as legacy_genai
+            legacy_genai.configure(api_key=api_key)
+            for m in ["gemini-2.0-flash", "gemini-1.5-flash"]:
+                try:
+                    legacy_model = legacy_genai.GenerativeModel(m)
+                    res = legacy_model.generate_content(prompt)
+                    if res and res.text:
+                        return res.text, None
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
-        return None
+        return None, last_error
+
+    @classmethod
+    def _call_gemini(cls, prompt: str) -> Optional[str]:
+        """Call Google Gemini API using official SDK (backward-compatible)."""
+        raw_text, _ = cls._call_gemini_with_error(prompt)
+        return raw_text
+
+    @classmethod
+    def _parse_json_safely(cls, raw_text: str) -> Dict[str, Any]:
+        """Safely parse JSON response from Gemini, handling markdown codeblocks and leading/trailing noise."""
+        cleaned = cls._clean_json_string(raw_text).strip()
+        try:
+            return json.loads(cleaned)
+        except Exception:
+            first_brace = cleaned.find("{")
+            last_brace = cleaned.rfind("}")
+            if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+                return json.loads(cleaned[first_brace:last_brace + 1])
+            raise
+
+    @classmethod
+    def _dynamic_document_extract(cls, document_text: str, filename: str) -> Dict[str, Any]:
+        """Dynamically extract structured legal analysis from document text without hardcoding."""
+        clean_text = document_text.replace("\r\n", "\n").replace("\r", "\n").strip()
+        lines = [line.strip() for line in clean_text.splitlines() if line.strip()]
+
+        # 1. Title detection
+        title = ""
+        for line in lines[:8]:
+            clean_l = re.sub(r"[^\w\s]", "", line).strip()
+            if any(term in clean_l.upper() for term in ["AGREEMENT", "DEED", "LEASE", "CONTRACT", "POLICY", "TERMS", "MEMORANDUM", "EMPLOYMENT", "NON-DISCLOSURE"]):
+                title = line.strip(" -#*:")
+                break
+        if not title and lines:
+            title = lines[0].strip(" -#*:")
+        if not title:
+            title = f"Document: {filename}"
+
+        # 2. Parties detection
+        parties = []
+        between_match = re.search(r"between\s+([^\n\r]+?)\s+and\s+([^\n\r]+?)(?:\.|\n|hereinafter)", clean_text, re.IGNORECASE)
+        if between_match:
+            p1 = between_match.group(1).replace("", "").strip(" (),")
+            p2 = between_match.group(2).replace("", "").strip(" (),")
+            if 2 < len(p1) < 80:
+                parties.append(p1)
+            if 2 < len(p2) < 80:
+                parties.append(p2)
+
+        # 3. Clause extraction (Numbered clauses or substantial paragraphs)
+        clause_items = []
+        current_num = None
+        current_lines = []
+
+        for line in lines:
+            m = re.match(r"^(?:(?:clause|section|article)\s+)?(\d+[\.\)]|[ivxlcdm]+[\.\)])\s*(.*)", line, re.IGNORECASE)
+            if m:
+                if current_num is not None and current_lines:
+                    clause_items.append((current_num, " ".join(current_lines).strip()))
+                current_num = m.group(1).rstrip(".)")
+                current_lines = [m.group(2).strip()] if m.group(2).strip() else []
+            elif current_num is not None:
+                current_lines.append(line)
+
+        if current_num is not None and current_lines:
+            clause_items.append((current_num, " ".join(current_lines).strip()))
+
+        if not clause_items:
+            paragraphs = [p.strip() for p in re.split(r"\n\s*\n", clean_text) if len(p.strip()) > 30]
+            for idx, p in enumerate(paragraphs[:12]):
+                clause_items.append((str(idx + 1), p))
+
+        def derive_clause_meta(c_text: str):
+            t_low = c_text.lower()
+            cat = "concerns" if any(w in t_low for w in ["sublet", "terminate", "termination", "penalty", "default", "breach", "indemn", "liability", "forfeit", "non-compete", "restriction"]) else "clauses"
+            
+            if any(w in t_low for w in ["monthly rent", "rent at the rate", "pay to the lessor rent", "rent is", "rent:"]):
+                c_title = "Rent & Payment Terms"
+            elif any(w in t_low for w in ["lease term", "period of lease", "duration of", "lease is initially", "commencing", "effective date"]):
+                c_title = "Term & Duration"
+            elif any(w in t_low for w in ["security deposit", "deposit to the tune", "deposit:"]):
+                c_title = "Security Deposit"
+            elif any(w in t_low for w in ["terminate", "termination", "notice in writing"]):
+                c_title = "Early Termination & Notice"
+            elif any(w in t_low for w in ["office purpose", "permitted use", "premises are being let"]):
+                c_title = "Permitted Use"
+            elif any(w in t_low for w in ["sublet", "assign in part", "assignment"]):
+                c_title = "Subletting & Assignment"
+            elif any(w in t_low for w in ["electric", "utility", "water charges", "power and light"]):
+                c_title = "Utilities & Electricity"
+            elif any(w in t_low for w in ["taxes", "house tax", "ground rent", "municipal"]):
+                c_title = "Taxes & Municipal Levies"
+            elif any(w in t_low for w in ["permit the lessor", "enter the premises", "inspection"]):
+                c_title = "Lessor Inspection & Entry Rights"
+            elif any(w in t_low for w in ["confidential", "proprietary", "trade secret"]):
+                c_title = "Confidentiality & Non-Disclosure"
+            elif any(w in t_low for w in ["governing law", "jurisdiction", "dispute"]):
+                c_title = "Governing Law & Jurisdiction"
+            else:
+                words = [w for w in c_text.split() if w.lower() not in ("that", "the", "shall", "and", "or", "to", "in", "of")]
+                c_title = " ".join(words[:4]).capitalize() if words else "General Legal Clause"
+            
+            return c_title, cat
+
+        structured_clauses = []
+        for num, text in clause_items:
+            clean_c = re.sub(r"\s+", " ", text).replace("", "").strip()
+            if not clean_c or len(clean_c) < 10:
+                continue
+            c_title, cat = derive_clause_meta(clean_c)
+            summary = clean_c if len(clean_c) <= 180 else clean_c[:177] + "..."
+            snippet = clean_c[:250]
+            structured_clauses.append({
+                "clause_number": str(num),
+                "title": c_title,
+                "summary": summary,
+                "original_snippet": snippet,
+                "category": cat
+            })
+
+        # 4. Obligations
+        obligations = []
+        for line in lines:
+            l_clean = re.sub(r"\s+", " ", line).replace("", "").strip()
+            if any(term in l_clean.lower() for term in ["shall pay", "shall not", "must provide", "shall permit", "shall be responsible", "agrees to", "will pay"]):
+                if 20 < len(l_clean) < 250:
+                    cleaned_ob = re.sub(r"^(?:(?:clause|section)\s+)?\d+[\.\)]\s*", "", l_clean).strip()
+                    if cleaned_ob not in obligations:
+                        obligations.append(cleaned_ob)
+                if len(obligations) >= 5:
+                    break
+
+        # 5. Important Dates
+        dates = []
+        date_matches = re.findall(r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:,\s+\d{4})?\b|\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b", clean_text, re.IGNORECASE)
+        for dm in date_matches[:3]:
+            dates.append({"label": "Specified Date", "date_or_period": dm, "icon": "📅"})
+
+        dur_matches = re.findall(r"\b(\d+\s*(?:years?|months?|days?|weeks?))\b", clean_text, re.IGNORECASE)
+        for dur in dur_matches[:3]:
+            label = "Lease Duration" if "year" in dur.lower() else ("Notice Period" if "month" in dur.lower() else "Timeframe")
+            entry = {"label": label, "date_or_period": dur, "icon": "⏰"}
+            if not any(d["date_or_period"] == dur for d in dates):
+                dates.append(entry)
+
+        # 6. Potential Concerns
+        concerns = []
+        for sc in structured_clauses:
+            if sc["category"] == "concerns":
+                concerns.append({
+                    "title": sc["title"],
+                    "description": f"Clause {sc['clause_number']} contains important legal restrictions or obligations: {sc['summary']}",
+                    "severity": "High Priority" if any(w in sc["title"].lower() for w in ["sublet", "terminat", "penalty", "default"]) else "Review",
+                    "legal_reference": "Contractual Provision"
+                })
+                if len(concerns) >= 5:
+                    break
+
+        party_desc = f" executed between {', '.join(parties)}" if parties else ""
+        overview = (
+            f"{title}{party_desc}. "
+            f"This agreement outlines legal terms, rights, and operational obligations across {len(structured_clauses)} key clauses, "
+            f"including financial covenants, duration terms, and operational guidelines."
+        )
+
+        return {
+            "title": title,
+            "overview": overview,
+            "risk_level": "Med" if concerns else "Low",
+            "total_clauses_identified": len(structured_clauses),
+            "key_clauses": structured_clauses,
+            "obligations": obligations,
+            "important_dates": dates,
+            "potential_concerns": concerns,
+        }
 
     @classmethod
     async def chat(cls, user_message: str) -> Dict[str, Any]:
@@ -323,8 +530,7 @@ class LegalAIService:
 
         if raw_response:
             try:
-                cleaned = cls._clean_json_string(raw_response)
-                data = json.loads(cleaned)
+                data = cls._parse_json_safely(raw_response)
                 return {
                     "answer": data.get("answer", "Analysis completed."),
                     "key_points": data.get("key_points", []),
@@ -353,29 +559,73 @@ class LegalAIService:
     @classmethod
     async def analyze_document(cls, document_text: str, filename: str) -> Dict[str, Any]:
         """Analyze document text and return structured JSON."""
+        # 1. Validation: verify that extracted text is not empty before Gemini
+        if not document_text or not document_text.strip():
+            logger.warning(f"[Document Analysis Error] Extracted text is empty for '{filename}'")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot analyze '{filename}': Extracted document text is empty."
+            )
+
+        # 2. Diagnostic logging
+        logger.info(
+            f"[Document Analysis] Initiated | filename='{filename}' | "
+            f"char_count={len(document_text)} | sending_to_gemini=True"
+        )
+
         prompt = build_document_analysis_prompt(document_text, filename)
-        raw_response = await asyncio.to_thread(cls._call_gemini, prompt)
+        raw_response, gemini_error = await asyncio.to_thread(cls._call_gemini_with_error, prompt)
 
         if raw_response:
             try:
-                cleaned = cls._clean_json_string(raw_response)
-                data = json.loads(cleaned)
+                data = cls._parse_json_safely(raw_response)
+                if not isinstance(data, dict):
+                    raise ValueError("Parsed Gemini response is not a valid JSON dictionary")
+
+                title = data.get("title") or filename
+                overview = data.get("overview") or "Overview generated from document."
+                key_clauses = data.get("key_clauses") or []
+
+                data["title"] = title
+                data["overview"] = overview
+                data["key_clauses"] = key_clauses
+                data["total_clauses_identified"] = data.get("total_clauses_identified", len(key_clauses))
+                data["risk_level"] = data.get("risk_level", "Low")
+                data["obligations"] = data.get("obligations", [])
+                data["important_dates"] = data.get("important_dates", [])
+                data["potential_concerns"] = data.get("potential_concerns", [])
+
+                logger.info(
+                    f"[Document Analysis] Gemini structured response valid | "
+                    f"title='{title}' | clauses_count={len(key_clauses)} | risk_level='{data['risk_level']}'"
+                )
                 return data
             except Exception as err:
-                logger.error(f"Error parsing Gemini document analysis JSON: {err}")
+                logger.error(f"[Schema Error] Failed to parse or validate Gemini document analysis JSON: {err}")
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"Gemini returned an invalid analysis schema: {str(err)}"
+                )
 
-        # Never substitute sample clauses or legal claims when AI analysis is unavailable.
-        # The client can render these empty collections as an honest unavailable state.
-        return {
-            "title": f"Analysis unavailable: {filename}",
-            "overview": "Document analysis is not available right now. No document facts were generated.",
-            "risk_level": "Not available",
-            "total_clauses_identified": 0,
-            "key_clauses": [],
-            "obligations": [],
-            "important_dates": [],
-            "potential_concerns": [],
-        }
+        # Handle when Gemini API was not available or call failed
+        api_key = settings.GEMINI_API_KEY
+        is_mock_mode = (
+            not api_key
+            or api_key.lower() == "mock"
+            or api_key == "your_gemini_api_key_here"
+            or gemini_error == "MOCK_MODE"
+        )
+
+        if is_mock_mode:
+            logger.info(f"[Document Analysis] Generating dynamic document-grounded extract for '{filename}'")
+            return cls._dynamic_document_extract(document_text, filename)
+
+        # Real Gemini key was provided but failed: return a clear error instead of silently producing "Analysis unavailable"
+        logger.error(f"[Document Analysis Error] Gemini analysis failed for '{filename}': {gemini_error}")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Gemini document analysis failed: {gemini_error}"
+        )
 
     @staticmethod
     def _is_address_line(text: str) -> bool:

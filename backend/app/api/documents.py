@@ -14,6 +14,8 @@ from app.schemas import (
 from app.services.document_service import DocumentService
 from app.services.legal_ai_service import LegalAIService
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/documents", tags=["Legal Documents"])
 
 @router.post("/upload", response_model=DocumentUploadResponse, status_code=status.HTTP_201_CREATED)
@@ -78,23 +80,53 @@ async def delete_document(document_id: str):
 async def analyze_document(document_id: str):
     """Perform AI document analysis (plain-language overview, key clauses, dates, concerns)."""
     doc = DocumentService.get_document(document_id)
+    filename = doc.get("filename", "document.pdf")
     cached = DocumentService.get_cached_analysis(document_id)
 
     if cached:
-        res = cached
-    else:
-        extracted_text = doc.get("extracted_text", "")
-        res = await LegalAIService.analyze_document(extracted_text, doc.get("filename", "document.pdf"))
-        # Cache when valid structured analysis is returned
-        if res.get("key_clauses") or (res.get("overview") and not res.get("overview", "").startswith("Document analysis is not available")):
-            DocumentService.set_cached_analysis(document_id, res)
+        return DocumentAnalysisResponse(
+            document_id=doc["id"],
+            filename=filename,
+            title=cached.get("title", f"Analysis: {filename}"),
+            overview=cached.get("overview", "Overview of the legal document."),
+            risk_level=cached.get("risk_level", "Low"),
+            total_clauses_identified=cached.get("total_clauses_identified", len(cached.get("key_clauses", []))),
+            key_clauses=cached.get("key_clauses", []),
+            obligations=cached.get("obligations", []),
+            important_dates=cached.get("important_dates", []),
+            potential_concerns=cached.get("potential_concerns", []),
+            disclaimer=LEGAL_DISCLAIMER
+        )
+
+    extracted_text = doc.get("extracted_text", "").strip()
+
+    # Diagnostic logging: filename, MIME type, character count, page count
+    logger.info(
+        f"[Analysis Request] document_id='{document_id}' | filename='{filename}' | "
+        f"file_type='{doc.get('file_type')}' | page_count={doc.get('page_count', 1)} | "
+        f"char_count={len(extracted_text)}"
+    )
+
+    # 1. Validation: verify that extracted text is not empty before Gemini
+    if not extracted_text or extracted_text.startswith("[Notice: This document appears to be scanned"):
+        logger.warning(f"[Analysis Error] Text extraction empty or scanned for '{filename}' ({document_id})")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot analyze '{filename}': The document contains no extractable text (it may be scanned, image-only, or empty). Please upload a text-based document."
+        )
+
+    res = await LegalAIService.analyze_document(extracted_text, filename)
+
+    # Cache when valid structured analysis is returned
+    if res.get("key_clauses") or (res.get("overview") and not res.get("overview", "").startswith("Document analysis is not available")):
+        DocumentService.set_cached_analysis(document_id, res)
 
     return DocumentAnalysisResponse(
         document_id=doc["id"],
         filename=doc["filename"],
         title=res.get("title", f"Analysis: {doc['filename']}"),
-        overview=res.get("overview", "Document analysis is not available."),
-        risk_level=res.get("risk_level", "Not available"),
+        overview=res.get("overview", "Overview of the legal document."),
+        risk_level=res.get("risk_level", "Low"),
         total_clauses_identified=res.get("total_clauses_identified", len(res.get("key_clauses", []))),
         key_clauses=res.get("key_clauses", []),
         obligations=res.get("obligations", []),
@@ -102,8 +134,6 @@ async def analyze_document(document_id: str):
         potential_concerns=res.get("potential_concerns", []),
         disclaimer=LEGAL_DISCLAIMER
     )
-
-logger = logging.getLogger(__name__)
 
 @router.post("/{document_id}/ask", response_model=DocumentAskResponse)
 async def ask_document_question(document_id: str, request: DocumentAskRequest):

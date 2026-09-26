@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # AI Configuration
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "mock")
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
     # Document Uploads
     UPLOAD_DIR: str = str(BASE_DIR / "uploads")
