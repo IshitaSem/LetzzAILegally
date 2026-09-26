@@ -7,7 +7,8 @@ from app.api import health, chat, documents
 logger = logging.getLogger("uvicorn")
 logger.info(
     f"[LetzAiLegally] Worker initialized | effective_proxy={settings.effective_proxy} | "
-    f"gemini_model={settings.GEMINI_MODEL} | api_key_configured={bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != 'mock')}"
+    f"gemini_model={settings.GEMINI_MODEL} | candidate_models={settings.candidate_gemini_models} | "
+    f"api_key_configured={bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != 'mock')}"
 )
 
 app = FastAPI(

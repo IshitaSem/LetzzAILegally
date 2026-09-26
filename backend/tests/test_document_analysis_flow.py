@@ -272,3 +272,60 @@ def test_gemini_rest_call_with_proxy(monkeypatch):
         "http": "http://proxy.server:3128",
         "https": "http://proxy.server:3128"
     }
+
+
+def test_gemini_candidate_models_sanitizes_obsolete_model(monkeypatch):
+    """Verify that obsolete gemini-1.5-flash is sanitized and excluded from candidate models."""
+    from app.config import Settings
+    custom_settings = Settings(GEMINI_MODEL="gemini-1.5-flash")
+    assert custom_settings.GEMINI_MODEL == "gemini-2.5-flash"
+    assert "gemini-1.5-flash" not in custom_settings.candidate_gemini_models
+    assert "gemini-2.5-flash" in custom_settings.candidate_gemini_models
+
+
+def test_gemini_rest_fallback_on_404(monkeypatch):
+    """Verify that if the first model returns HTTP 404, it seamlessly falls back to the next candidate model."""
+    import requests
+    monkeypatch.setattr(settings, "GEMINI_API_KEY", "AIzaSyValidKey")
+    monkeypatch.setattr(settings, "GEMINI_MODEL", "gemini-2.5-flash")
+    monkeypatch.setattr(settings, "GEMINI_FALLBACK_MODELS", ["gemini-2.0-flash"])
+
+    call_history = []
+
+    class MockResponse:
+        def __init__(self, status_code, json_data):
+            self.status_code = status_code
+            self._json = json_data
+            self.text = str(json_data)
+        def json(self):
+            return self._json
+
+    def mock_post(url, headers=None, json=None, proxies=None, timeout=None):
+        call_history.append(url)
+        # First model returns 404 Not Found
+        if "gemini-2.5-flash" in url:
+            return MockResponse(404, {
+                "error": {
+                    "code": 404,
+                    "message": "models/gemini-2.5-flash is not found for API version v1beta",
+                    "status": "NOT_FOUND"
+                }
+            })
+        # Second fallback model returns 200 OK
+        return MockResponse(200, {
+            "candidates": [{
+                "content": {
+                    "parts": [{"text": '{"title": "Fallback Success", "risk_level": "Low"}'}]
+                }
+            }]
+        })
+
+    monkeypatch.setattr(requests, "post", mock_post)
+
+    text, err = LegalAIService._call_gemini_with_error("Analyze document")
+    assert err is None
+    assert "Fallback Success" in text
+    assert len(call_history) == 2
+    assert "gemini-2.5-flash" in call_history[0]
+    assert "gemini-2.0-flash" in call_history[1]
+

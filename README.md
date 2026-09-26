@@ -68,7 +68,7 @@ Instant extraction of critical contract facets:
 * **Frontend:** React 19, TypeScript, Vite, CSS Custom Properties, Accessible ARIA primitives.
 * **Backend:** Python 3.11+, FastAPI, Uvicorn, Pydantic v2.
 * **PDF Processing:** PyMuPDF (`pymupdf` / `fitz`).
-* **Generative AI:** Google Gemini API (`gemini-1.5-flash`) via the official Google GenAI Python SDK (`google-genai`).
+* **Generative AI:** Google Gemini API (`gemini-2.5-flash`) via direct HTTP REST engine with official Google GenAI Python SDK fallback.
 * **Testing:** Pytest, AnyIO, FastAPI TestClient.
 * **Hosting:** Vercel (Frontend CDN with automated edge rewrites), PythonAnywhere (Backend API).
 
@@ -108,7 +108,7 @@ Instant extraction of critical contract facets:
 ```
 
 ### Generative AI Model Configuration
-* **Configured Model:** `gemini-1.5-flash` (specified via `GEMINI_MODEL` in backend configuration).
+* **Configured Model:** `gemini-2.5-flash` (specified via `GEMINI_MODEL` with resilient automatic fallback to `gemini-2.0-flash` and `gemini-2.5-flash-lite`).
 * **Client Caching:** The backend caches the `genai.Client` singleton instance per API key to eliminate connection overhead and improve response latency.
 * **Mock Fallback:** Automated test suites run with high fidelity under mock mode when an external API key is not configured, guaranteeing reliable CI/CD pipelines.
 
@@ -188,7 +188,7 @@ The backend accepts the following environment variables (configured via `.env` o
 ```env
 # AI Service
 GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-1.5-flash
+GEMINI_MODEL=gemini-2.5-flash
 
 # Server Configuration
 ENV=production

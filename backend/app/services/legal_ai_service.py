@@ -307,11 +307,8 @@ class LegalAIService:
             logger.info("[Gemini] GEMINI_API_KEY is set to placeholder 'your_gemini_api_key_here'. Using dynamic fallback.")
             return None, "MOCK_MODE"
 
-        # Resilient candidate model fallback order
-        candidate_models = [settings.GEMINI_MODEL]
-        for fallback_model in ["gemini-2.0-flash", "gemini-1.5-flash"]:
-            if fallback_model not in candidate_models:
-                candidate_models.append(fallback_model)
+        # Resilient candidate model fallback order from centralized configuration
+        candidate_models = settings.candidate_gemini_models
 
         last_error = "Unknown error calling Gemini API"
 
