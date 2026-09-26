@@ -15,22 +15,10 @@ Developed for the **Hack2Skill PromptWars AI Code Submission Challenge: "AI for 
 
 ## ⚡ Evaluator Quickstart (Test in 30 Seconds)
 
-Evaluators do **not** need to prepare or upload a PDF to test the full pipeline:
-
 1. **Open the Live App:** Navigate to [https://letzz-ai-legally.vercel.app/](https://letzz-ai-legally.vercel.app/).
-2. **Click "Try Sample Lease":** Click the **"Try Sample Lease"** button on the home screen hero banner or on the Documents page.
-3. **Inspect Structured Extraction:**
-   - **Summary:** Residential Lease Agreement for 742 Evergreen Terrace.
-   - **Key Dates:** Lease Start: August 1, 2024 | Rent Due: 1st of each month | Grace Period: 5 days.
-   - **Financials:** Base Rent: $685/month | Security Deposit: $685 | Late Fee: $50 after 5th.
-   - **Important Clauses:** Notice of Termination (30 days), Maintenance obligations, Pet restrictions.
-   - **Action Checklist:** Inspection checklist, renter's insurance requirement, security deposit receipt.
-4. **Ask Grounded Legal Questions:**
-   - *"What is the monthly rent?"* &rarr; **$685 per month**, citing Section 3.
-   - *"When is rent due?"* &rarr; **1st of each month**, citing Section 3.
-   - *"What is the security deposit amount?"* &rarr; **$685**, citing Section 4.
-   - *"Are pets allowed?"* &rarr; **No**, strictly prohibited without prior written consent (Section 8).
-   - *"Who is responsible for repairing the refrigerator?"* &rarr; **Not specified in document**. The system cleanly reports absent clauses without hallucinating.
+2. **Ask a Legal Question:** Type any contract, tenant rights, or employment law question into the chat composer (e.g., *"What are my rights as a tenant regarding habitability?"*) to inspect citation grounding and educational disclaimers.
+3. **Analyze a Legal Document:** Navigate to **Documents** &rarr; click **Upload** &rarr; select any legal contract or agreement (`PDF`, `DOCX`, `TXT`).
+4. **Review Extracted Clauses & Ask Questions:** Review the structured breakdown (Clauses, Dates, Potential Concerns, Checklist) and query the document directly via the Q&A panel (e.g., *"What is the termination notice period?"* or *"Who handles appliance repairs?"*). Absent terms are cleanly flagged without hallucinating.
 
 ---
 
@@ -227,7 +215,7 @@ ALLOWED_ORIGINS=http://localhost:5173,https://letzz-ai-legally.vercel.app
 
 | Evaluation Criteria | Implementation Details |
 |---|---|
-| **Problem Statement Alignment** | End-to-end grounded legal assistance; instant 1-click sample lease demo; absent clause detection; clear legal disclaimers. |
+| **Problem Statement Alignment** | End-to-end grounded legal assistance; production document upload & analysis pipeline; absent clause detection; clear legal disclaimers. |
 | **Code Quality & Architecture** | Modular FastAPI routers, Pydantic v2 schemas, Vite + TypeScript frontend, zero debug clutter, clean git history. |
 | **Accessibility (WCAG AA)** | 9.30:1 contrast ratio, skip link, semantic labels, keyboard navigable dialogs and tablists. |
 | **Testing & Robustness** | **54 passing automated tests** with 100% pass rate covering edge cases, extraction, and security. |
